@@ -1,0 +1,11 @@
+.cache
+.vscode*
+*.kdev4
+*.pyc
+*.pyo
+*.out
+/build
+.venv/
+*.mda.tar
+/dist
+/ios-arm64-cross.ini
