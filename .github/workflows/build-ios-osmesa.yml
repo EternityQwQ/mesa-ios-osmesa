@@ -111,8 +111,8 @@ jobs:
             -Ddisplay-info=disabled \
             -Dspirv-tools=disabled \
             -Dshader-cache=disabled \
-            -Dteflon=disabled \
-            -Dtorx=disabled \
+            -Dteflon=false \
+            -Dtorx=false \
             -Dtools= \
             -Dvideo-codecs= \
             -Dbuild-tests=false \
