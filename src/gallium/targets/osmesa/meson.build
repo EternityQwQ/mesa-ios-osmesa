@@ -18,6 +18,13 @@ osmesa_def = custom_target(
   command : gen_vs_module_defs_normal_command,
 )
 
+osmesa_extra_drivers = []
+if with_gallium_zink
+  # Zink+OSMesa offscreen: link Zink so GALLIUM_DRIVER=zink can select
+  # GPU rendering (MoltenVK/Metal on iOS) with software fallback.
+  osmesa_extra_drivers += driver_zink
+endif
+
 libosmesa = shared_library(
   osmesa_lib_name,
   'osmesa_target.c',
@@ -31,7 +38,7 @@ libosmesa = shared_library(
   link_depends : osmesa_link_depends,
   link_whole : [libosmesa_st, libglapi_bridge],
   link_with : [libmesa, libgallium, libws_null, libglapi],
-  dependencies : [dep_thread, dep_clock, dep_unwind, driver_swrast, idep_mesautil],
+  dependencies : [dep_thread, dep_clock, dep_unwind, driver_swrast, idep_mesautil] + osmesa_extra_drivers,
   name_prefix : host_machine.system() == 'windows' ? '' : [],
   soversion : host_machine.system() == 'windows' ? '' : '8',
   version : '8.0.0',

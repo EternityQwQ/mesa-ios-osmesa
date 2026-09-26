@@ -26,6 +26,12 @@
 
 #include "sw/null/null_sw_winsys.h"
 
+#include <string.h>
+
+#ifdef GALLIUM_ZINK
+#include "zink/zink_public.h"
+#endif
+
 
 struct pipe_screen *
 osmesa_create_screen(void);
@@ -43,6 +49,37 @@ osmesa_create_screen(void)
    winsys = null_sw_create();
    if (!winsys)
       return NULL;
+
+#ifdef GALLIUM_ZINK
+   /* Zink+OSMesa offscreen rendering: GALLIUM_DRIVER=zink selects GPU
+    * rendering through Vulkan (MoltenVK/Metal on iOS). Output stays
+    * offscreen - the frontend reads pixels back via resource transfers,
+    * no window or swapchain is ever needed. Falls back to the software
+    * rasterizer when Zink is unavailable (e.g. no Vulkan loader on the
+    * device) so offscreen rendering keeps working.
+    */
+   if (strcmp(debug_get_option("GALLIUM_DRIVER", ""), "zink") == 0) {
+      screen = zink_create_screen(winsys, NULL);
+      if (screen)
+         return debug_screen_wrap(screen);
+      debug_printf("OSMesa: Zink requested but unavailable, falling back to software rasterizer\n");
+      /* Fall through to software below. Bypass sw_screen_create() here on
+       * purpose: it would retry the unmatched GALLIUM_DRIVER value and
+       * give up instead of falling back. */
+      screen = sw_screen_create_named(winsys,
+#if defined(GALLIUM_LLVMPIPE)
+                                      "llvmpipe"
+#else
+                                      "softpipe"
+#endif
+                                      );
+      if (!screen) {
+         winsys->destroy(winsys);
+         return NULL;
+      }
+      return screen;
+   }
+#endif
 
    /* Create llvmpipe or softpipe screen */
    screen = sw_screen_create(winsys);
