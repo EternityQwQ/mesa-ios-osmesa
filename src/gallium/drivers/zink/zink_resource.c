@@ -752,11 +752,17 @@ negotiate_image_config(struct zink_screen *screen, VkImageCreateInfo *ici, const
       struct image_config configs[MAX_IMAGE_CONFIGS];
       unsigned count = 0;
 
-      /* tiling attempts: orig, orig+EXT, LINEAR, LINEAR+EXT */
-      for (int attempt = 0; attempt < 4; attempt++) {
+      /* tiling attempts: orig, orig+EXT, LINEAR, LINEAR+EXT.
+       * Cube targets get a second round with CUBE_COMPATIBLE set: some
+       * drivers (MoltenVK) only report usable arrayLayers when the flag
+       * is present in the query. Plain attempts always run first, so
+       * behavior is unchanged where they succeed. */
+      int max_attempt = want_cube ? 8 : 4;
+      for (int attempt = 0; attempt < max_attempt; attempt++) {
          VkImageTiling tiling;
          bool extended;
-         switch (attempt) {
+         int a = attempt & 3;
+         switch (a) {
          case 0:
             tiling = orig_tiling;
             extended = false;
@@ -784,7 +790,10 @@ negotiate_image_config(struct zink_screen *screen, VkImageCreateInfo *ici, const
          default:
             UNREACHABLE("bad attempt");
          }
-         count = build_usage_candidates(screen, templ, bind, tiling, base_flags,
+         VkImageCreateFlags attempt_flags = base_flags;
+         if (want_cube && attempt >= 4)
+            attempt_flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+         count = build_usage_candidates(screen, templ, bind, tiling, attempt_flags,
             extended, have_fmtlist, always_mutable, configs, MAX_IMAGE_CONFIGS);
          count = dedup_configs(configs, count);
 
