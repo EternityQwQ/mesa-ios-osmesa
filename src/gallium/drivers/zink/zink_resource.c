@@ -336,7 +336,7 @@ create_bci(struct zink_screen *screen, const struct pipe_resource *templ, unsign
 }
 
 static bool
-check_ici(struct zink_screen *screen, VkImageCreateInfo *ici, uint64_t modifier)
+check_ici(struct zink_screen *screen, VkImageCreateInfo *ici, uint64_t modifier, bool ignore_layers)
 {
    VkImageFormatProperties image_props;
    VkResult ret;
@@ -400,7 +400,7 @@ check_ici(struct zink_screen *screen, VkImageCreateInfo *ici, uint64_t modifier)
       goto check_ici_fail;
    if (ici->mipLevels > image_props.maxMipLevels)
       goto check_ici_fail;
-   if (ici->arrayLayers > image_props.maxArrayLayers)
+   if (ici->arrayLayers > image_props.maxArrayLayers && !ignore_layers)
       goto check_ici_fail;
    if (!(ici->samples & image_props.sampleCounts))
       goto check_ici_fail;
@@ -609,7 +609,7 @@ build_usage_candidates(struct zink_screen *screen, const struct pipe_resource *t
 /* Apply a candidate config and test it with check_ici. */
 static bool
 try_image_config(struct zink_screen *screen, VkImageCreateInfo *ici, const struct image_config *config,
-                 VkImageFormatListCreateInfo *format_list, uint64_t modifier)
+                 VkImageFormatListCreateInfo *format_list, uint64_t modifier, bool ignore_layers)
 {
    ici->tiling = config->tiling;
    ici->usage = config->usage;
@@ -622,7 +622,7 @@ try_image_config(struct zink_screen *screen, VkImageCreateInfo *ici, const struc
       ici->pNext = NULL;
    }
 
-   return check_ici(screen, ici, modifier);
+   return check_ici(screen, ici, modifier, ignore_layers);
 }
 
 /* Try a usage, falling back to without HOST_TRANSFER. */
@@ -633,10 +633,10 @@ try_usage_mutable(struct zink_screen *screen, VkImageCreateInfo *ici, VkImageUsa
       return false;
    ici->usage = usage;
    if ((usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
-       check_ici(screen, ici, mod))
+       check_ici(screen, ici, mod, false))
       return true;
    ici->usage = usage & ~VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;
-   return check_ici(screen, ici, mod);
+   return check_ici(screen, ici, mod, false);
 }
 
 static bool
@@ -798,7 +798,25 @@ negotiate_image_config(struct zink_screen *screen, VkImageCreateInfo *ici, const
          count = dedup_configs(configs, count);
 
          for (unsigned i = 0; i < count; i++) {
-            if (try_image_config(screen, ici, &configs[i], format_list, DRM_FORMAT_MOD_INVALID))
+            if (try_image_config(screen, ici, &configs[i], format_list, DRM_FORMAT_MOD_INVALID, false))
+               goto found;
+         }
+      }
+
+      /* Blind last resort for cubes: MoltenVK reports maxArrayLayers=1
+       * whenever attachment usage is present on GPUs without Metal layered
+       * rendering (e.g. A11), even though single-slice cube rendering
+       * works. Ignore the layer limit and let vkCreateImage be the judge
+       * (its error is already logged). */
+      if (want_cube) {
+         mesa_loge("ZINK: cube blind attempt (ignoring layer limit)");
+         count = build_usage_candidates(screen, templ, bind, orig_tiling,
+            base_flags | VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+            false, have_fmtlist, always_mutable, configs, MAX_IMAGE_CONFIGS);
+         count = dedup_configs(configs, count);
+
+         for (unsigned i = 0; i < count; i++) {
+            if (try_image_config(screen, ici, &configs[i], format_list, DRM_FORMAT_MOD_INVALID, true))
                goto found;
          }
       }
@@ -815,7 +833,7 @@ found:
       VkImageUsageFlags saved_usage = ici->usage;
       VkImageCreateFlags saved_flags = ici->flags;
       ici->flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-      if (!check_ici(screen, ici, mod)) {
+      if (!check_ici(screen, ici, mod, false)) {
          ici->flags = saved_flags;
          ici->usage = saved_usage;
       }
