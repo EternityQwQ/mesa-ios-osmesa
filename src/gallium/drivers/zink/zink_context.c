@@ -6203,6 +6203,13 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    if (is_compute_only || zink_debug & ZINK_DEBUG_NOREORDER)
       ctx->no_reorder = true;
 
+#ifdef __APPLE__
+   /* iOS degradation policy: A11-class drivers lack features the threaded
+    * paths depend on - execute synchronously through the plain context.
+    * Existing non-threaded code path, no new logic. */
+   (void)flags;
+   return &ctx->base;
+#else
    if (!(flags & PIPE_CONTEXT_PREFER_THREADED) || flags & PIPE_CONTEXT_COMPUTE_ONLY) {
       return &ctx->base;
    }
@@ -6228,6 +6235,7 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    }
 
    return (struct pipe_context*)tc;
+#endif
 
 fail:
    if (ctx)
