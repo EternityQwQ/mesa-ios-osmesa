@@ -41,9 +41,10 @@ Mesa 源码（`mesa-main.zip`）+ iOS 真机构建流水线。
    glFinish();
    OSMesaDestroyContext(ctx);
    ```
-   默认走 softpipe CPU 离屏；设环境变量 `GALLIUM_DRIVER=zink` 切到
-   Zink+OSMesa（GPU 经 MoltenVK/Metal 离屏渲染并回读，输出仍是内存
-   像素，无需窗口；设备上缺 Vulkan 时自动回落 softpipe）。
+   默认即 Zink+OSMesa：优先经 MoltenVK/Metal GPU 离屏渲染并回读，
+   输出仍是内存像素，无需窗口；设备上缺 Vulkan 时自动回落
+   softpipe。设 `GALLIUM_DRIVER=softpipe`（或 `llvmpipe`、
+   `LIBGL_ALWAYS_SOFTWARE=1`）可强制只用 CPU 软渲染。
 4. Zink on iOS：App 先加载 MoltenVK（`MoltenVK.xcframework/ios-arm64`），再加载 Mesa dylib，`GALLIUM_DRIVER=zink`（或默认 pipe-loader 选 zink），Vulkan 层走 Metal。
 
 ## 源码来源

@@ -52,33 +52,40 @@ osmesa_create_screen(void)
       return NULL;
 
 #ifdef GALLIUM_ZINK
-   /* Zink+OSMesa offscreen rendering: GALLIUM_DRIVER=zink selects GPU
-    * rendering through Vulkan (MoltenVK/Metal on iOS). Output stays
-    * offscreen - the frontend reads pixels back via resource transfers,
-    * no window or swapchain is ever needed. Falls back to the software
-    * rasterizer when Zink is unavailable (e.g. no Vulkan loader on the
-    * device) so offscreen rendering keeps working.
+   /* Zink+OSMesa offscreen rendering: try GPU rendering through Vulkan
+    * (MoltenVK/Metal on iOS) by default. Output stays offscreen - the
+    * frontend reads pixels back via resource transfers, no window or
+    * swapchain is ever needed. Falls back to the software rasterizer
+    * when Zink is unavailable (e.g. no Vulkan loader on the device) so
+    * offscreen rendering keeps working. Set GALLIUM_DRIVER to
+    * "softpipe"/"llvmpipe" (or LIBGL_ALWAYS_SOFTWARE=1) to skip Zink.
     */
-   if (strcmp(debug_get_option("GALLIUM_DRIVER", ""), "zink") == 0) {
-      screen = zink_create_screen(winsys, NULL);
-      if (screen)
-         return debug_screen_wrap(screen);
-      debug_printf("OSMesa: Zink requested but unavailable, falling back to software rasterizer\n");
-      /* Fall through to software below. Bypass sw_screen_create() here on
-       * purpose: it would retry the unmatched GALLIUM_DRIVER value and
-       * give up instead of falling back. */
-      screen = sw_screen_create_named(winsys,
+   {
+      const char *driver = debug_get_option("GALLIUM_DRIVER", "");
+      bool force_sw = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false) ||
+                      strcmp(driver, "softpipe") == 0 ||
+                      strcmp(driver, "llvmpipe") == 0;
+      if (!force_sw) {
+         screen = zink_create_screen(winsys, NULL);
+         if (screen)
+            return debug_screen_wrap(screen);
+         debug_printf("OSMesa: Zink unavailable, falling back to software rasterizer\n");
+         /* Fall through to software below. Bypass sw_screen_create() here
+          * on purpose: it would retry the unmatched GALLIUM_DRIVER value
+          * and give up instead of falling back. */
+         screen = sw_screen_create_named(winsys,
 #if defined(GALLIUM_LLVMPIPE)
-                                      "llvmpipe"
+                                         "llvmpipe"
 #else
-                                      "softpipe"
+                                         "softpipe"
 #endif
-                                      );
-      if (!screen) {
-         winsys->destroy(winsys);
-         return NULL;
+                                         );
+         if (!screen) {
+            winsys->destroy(winsys);
+            return NULL;
+         }
+         return screen;
       }
-      return screen;
    }
 #endif
 
