@@ -21,6 +21,7 @@
  */
 
 
+#include <stdint.h>
 #include <string.h>
 
 #ifdef GALLIUM_ZINK
