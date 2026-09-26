@@ -1746,6 +1746,8 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
 
    if (!get_export_flags(screen, templ, &alloc_info)) {
       /* can't export anything, fail early */
+      mesa_loge("ZINK: resource create failed (export): target=%u format=%s",
+                templ->target, util_format_name(templ->format));
       return NULL;
    }
 
@@ -1790,6 +1792,10 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
          VKSCR(DestroyImage)(screen->dev, obj->image, NULL);
       FALLTHROUGH;
    case roc_fail_and_free_object:
+      mesa_loge("ZINK: resource create failed (%d): target=%u format=%s %ux%ux%u levels=%u samples=%u bind=0x%x",
+                create_result, templ->target, util_format_name(templ->format),
+                templ->width0, templ->height0, templ->array_size,
+                templ->last_level + 1, templ->nr_samples, templ->bind);
       FREE(obj);
       return NULL;
    default:
