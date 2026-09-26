@@ -76,46 +76,22 @@ osmesa_create_screen(void)
       return NULL;
 
 #ifdef GALLIUM_ZINK
-   /* Zink+OSMesa offscreen rendering: try GPU rendering through Vulkan
-    * (MoltenVK/Metal on iOS) by default. Output stays offscreen - the
-    * frontend reads pixels back via resource transfers, no window or
-    * swapchain is ever needed. Falls back to the software rasterizer
-    * when Zink is unavailable (e.g. no Vulkan loader on the device) so
-    * offscreen rendering keeps working. Set GALLIUM_DRIVER to
-    * "softpipe"/"llvmpipe" (or LIBGL_ALWAYS_SOFTWARE=1) to skip Zink.
+   /* Zink+OSMesa offscreen rendering: GPU through Vulkan (MoltenVK/Metal
+    * on iOS) is mandatory - no software fallback. Output stays offscreen:
+    * the frontend reads pixels back via resource transfers, no window or
+    * swapchain is ever needed. A NULL return here means Zink/MoltenVK is
+    * unusable on this device (see zinkfail.txt stages).
     */
-   {
-      const char *driver = debug_get_option("GALLIUM_DRIVER", "");
-      bool force_sw = debug_get_bool_option("LIBGL_ALWAYS_SOFTWARE", false) ||
-                      strcmp(driver, "softpipe") == 0 ||
-                      strcmp(driver, "llvmpipe") == 0;
-      if (!force_sw) {
-         screen = zink_create_screen(winsys, NULL);
-         if (screen) {
-            osmesa_note("OK:zink");
-            return debug_screen_wrap(screen);
-         }
-         debug_printf("OSMesa: Zink unavailable, falling back to software rasterizer\n");
-         osmesa_note("OK:softpipe-fallback");
-         /* Fall through to software below. Bypass sw_screen_create() here
-          * on purpose: it would retry the unmatched GALLIUM_DRIVER value
-          * and give up instead of falling back. */
-         screen = sw_screen_create_named(winsys,
-#if defined(GALLIUM_LLVMPIPE)
-                                         "llvmpipe"
-#else
-                                         "softpipe"
-#endif
-                                         );
-         if (!screen) {
-            winsys->destroy(winsys);
-            return NULL;
-         }
-         return screen;
-      }
+   screen = zink_create_screen(winsys, NULL);
+   if (screen) {
+      osmesa_note("OK:zink");
+      return debug_screen_wrap(screen);
    }
-#endif
-
+   debug_printf("OSMesa: Zink unavailable, no software fallback\n");
+   osmesa_note("FAIL:zink-screen");
+   winsys->destroy(winsys);
+   return NULL;
+#else
    /* Create llvmpipe or softpipe screen */
    screen = sw_screen_create(winsys);
    if (!screen) {
@@ -126,4 +102,5 @@ osmesa_create_screen(void)
 
    /* Inject optional trace, debug, etc. wrappers */
    return debug_screen_wrap(screen);
+#endif
 }
