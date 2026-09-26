@@ -76,6 +76,18 @@ if with_platform_macos
     modules : ['QuartzCore', 'Metal']
   )
 endif
+if host_machine.system() == 'darwin'
+  # The generated Vulkan dispatch table references the iOS/Metal platform
+  # function types unconditionally. They are declared by vulkan_ios.h /
+  # vulkan_metal.h only when the matching VK_USE_PLATFORM_* macros are set,
+  # so always define them on Apple hosts. This covers native macOS builds
+  # (which otherwise miss IOS_MVK) and iOS device cross builds without the
+  # 'macos' platform (which otherwise miss both; MoltenVK provides them).
+  vulkan_wsi_list += '-DVK_USE_PLATFORM_IOS_MVK'
+  if not with_platform_macos
+    vulkan_wsi_list += '-DVK_USE_PLATFORM_METAL_EXT'
+  endif
+endif
 
 idep_vulkan_wsi_defines = declare_dependency(
   compile_args : vulkan_wsi_list,

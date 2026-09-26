@@ -310,6 +310,10 @@ jobs:
           # dylibs exist so the iOS app can load Zink (needs MoltenVK at runtime).
           find build -name "libGL*.dylib" -o -name "*gallium*dylib" -o -name "*dri*dylib" | head -n 20 || true
           find build -name "*.dylib" -exec cp -L {} dist/ \; || true
+          # Zink static archive for iOS device apps (static linking is the
+          # norm on iOS: link libzink.a + MoltenVK.xcframework + the Metal,
+          # QuartzCore and Foundation frameworks in Xcode).
+          find build -name "libzink.a" -exec cp {} dist/ \; || true
           ls -la dist
 
       - name: Inspect artifacts
