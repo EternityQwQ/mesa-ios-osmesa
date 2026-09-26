@@ -1337,6 +1337,10 @@ zink_descriptors_update(struct zink_context *ctx, enum zink_pipeline_idx pidx)
    struct zink_batch_state *bs = ctx->bs;
    bool is_compute = pidx == ZINK_PIPELINE_COMPUTE;
    bool is_mesh = pidx == ZINK_PIPELINE_MESH;
+   /* iOS diagnosis: catch NULL program/batch before use. */
+   if (!bs || (is_compute ? !ctx->curr_compute : (pidx == ZINK_PIPELINE_GFX ? !ctx->curr_program : !ctx->mesh_program)))
+      mesa_loge("ZINK: NULL descriptors state: pidx=%d bs=%p compute=%p gfx=%p mesh=%p",
+                pidx, (void*)bs, (void*)ctx->curr_compute, (void*)ctx->curr_program, (void*)ctx->mesh_program);
    struct zink_program *pg = is_compute ? &ctx->curr_compute->base : pidx == ZINK_PIPELINE_GFX ? &ctx->curr_program->base : &ctx->mesh_program->base;
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    bool have_KHR_push_descriptor = screen->info.have_KHR_push_descriptor;
