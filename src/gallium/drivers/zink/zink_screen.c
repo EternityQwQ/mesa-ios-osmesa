@@ -3452,6 +3452,18 @@ zink_cl_cts_version(struct pipe_screen *pscreen)
    return "v2024-08-08-00";
 }
 
+#ifdef VK_LIBNAME_FALLBACK
+/* A loader handle may yield non-NULL wrappers (e.g. interposed dlsym
+ * hooks) that can never resolve real entry points. Probe a mandatory
+ * global function to tell a usable loader from a stub. */
+static bool
+zink_loader_usable(PFN_vkGetInstanceProcAddr get_instance_proc)
+{
+   return get_instance_proc &&
+          get_instance_proc(NULL, "vkCreateInstance") != NULL;
+}
+#endif
+
 static struct zink_screen *
 zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev_major, int64_t dev_minor, uint64_t adapter_luid)
 {
@@ -3500,11 +3512,13 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    screen->vk_GetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)util_dl_get_proc_address(screen->loader_lib, "vkGetInstanceProcAddr");
    screen->vk_GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)util_dl_get_proc_address(screen->loader_lib, "vkGetDeviceProcAddr");
 #if defined(VK_LIBNAME_FALLBACK)
-   if (!screen->vk_GetInstanceProcAddr ||
+   if (!zink_loader_usable(screen->vk_GetInstanceProcAddr) ||
        !screen->vk_GetDeviceProcAddr) {
-      /* Stub loader without Vulkan entry points: retry with the bundled
-       * MoltenVK before giving up. */
-      util_dl_close(screen->loader_lib);
+      /* Missing library, stub loader without Vulkan entry points, or
+       * interposed wrappers that cannot resolve real entry points:
+       * retry with the bundled MoltenVK before giving up. */
+      if (screen->loader_lib)
+         util_dl_close(screen->loader_lib);
       screen->loader_lib = util_dl_open(VK_LIBNAME_FALLBACK);
       screen->vk_GetInstanceProcAddr = NULL;
       screen->vk_GetDeviceProcAddr = NULL;
@@ -3514,7 +3528,12 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
       }
    }
 #endif
-   if (!screen->vk_GetInstanceProcAddr ||
+   if (!screen->loader_lib ||
+#if defined(VK_LIBNAME_FALLBACK)
+       !zink_loader_usable(screen->vk_GetInstanceProcAddr) ||
+#else
+       !screen->vk_GetInstanceProcAddr ||
+#endif
        !screen->vk_GetDeviceProcAddr) {
       if (!screen->driver_name_is_inferred)
          mesa_loge("ZINK: failed to get proc address");
