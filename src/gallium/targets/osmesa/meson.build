@@ -23,6 +23,13 @@ if with_gallium_zink
   # Zink+OSMesa offscreen: link Zink so GALLIUM_DRIVER=zink can select
   # GPU rendering (MoltenVK/Metal on iOS) with software fallback.
   osmesa_extra_drivers += driver_zink
+  # Zink reads DRI options at screen creation; the xmlconfig stub lib
+  # provides those symbols without needing expat.
+  osmesa_extra_drivers += idep_xmlconfig
+endif
+if host_machine.system() == 'darwin' and with_gallium_zink
+  # Zink's Metal code is Objective-C and needs the ObjC runtime at link.
+  osmesa_link_args += '-lobjc'
 endif
 
 libosmesa = shared_library(
