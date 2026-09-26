@@ -2437,6 +2437,18 @@ zink_set_sampler_views(struct pipe_context *pctx,
    if (views) {
       for (unsigned i = 0; i < num_views; ++i) {
          struct pipe_sampler_view *pview = views[i];
+         /* iOS diagnosis: catch NULL sampler components before they crash
+          * (failure-only logging, negligible cost otherwise). */
+         if (pview) {
+            struct zink_sampler_view *bv = zink_sampler_view(pview);
+            struct pipe_resource *tex = bv ? bv->base.texture : NULL;
+            struct zink_resource *r = tex ? zink_resource(tex) : NULL;
+            if (!bv || !tex || !r || !r->obj)
+               mesa_loge("ZINK: NULL sampler component: stage=%u slot=%u view=%p tex=%p (target=%u fmt=%s) res=%p obj=%p",
+                         shader_type, start_slot + i, (void*)bv, (void*)tex,
+                         tex ? tex->target : 0, tex ? util_format_name(tex->format) : "none",
+                         (void*)r, (void*)(r ? r->obj : NULL));
+         }
          struct zink_sampler_view *a = zink_sampler_view(ctx->sampler_views[shader_type][start_slot + i]);
          struct zink_sampler_view *b = zink_sampler_view(pview);
 
