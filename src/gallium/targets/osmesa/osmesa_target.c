@@ -21,16 +21,16 @@
  */
 
 
-#include "target-helpers/inline_sw_helper.h"
-#include "target-helpers/inline_debug_helper.h"
-
-#include "sw/null/null_sw_winsys.h"
-
 #include <string.h>
 
 #ifdef GALLIUM_ZINK
 #include "zink/zink_public.h"
 #endif
+
+#include "target-helpers/inline_sw_helper.h"
+#include "target-helpers/inline_debug_helper.h"
+
+#include "sw/null/null_sw_winsys.h"
 
 
 struct pipe_screen *
