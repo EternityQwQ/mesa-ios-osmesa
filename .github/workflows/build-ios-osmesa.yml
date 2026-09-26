@@ -139,9 +139,7 @@ jobs:
         run: |
           set -eux
           mkdir -p dist
-          echo "--- all dylibs in build ---"
-          find build -name "*.dylib" | head -n 50 || true
-          # OSMesa offscreen dylib (softpipe, CPU, no GPU needed)
+          # Zink+OSMesa 方案产物：仅 libOSMesa.8.dylib
           DIR=build/src/gallium/targets/osmesa
           if [ -e "$DIR/libOSMesa.8.dylib" ]; then
             cp -L "$DIR/libOSMesa.8.dylib" dist/libOSMesa.8.dylib
@@ -152,14 +150,6 @@ jobs:
             ls -la "$DIR" || true
             exit 1
           fi
-          # Zink lives inside gallium megadriver / libGL. Collect whatever
-          # dylibs exist so the iOS app can load Zink (needs MoltenVK at runtime).
-          find build -name "libGL*.dylib" -o -name "*gallium*dylib" -o -name "*dri*dylib" | head -n 20 || true
-          find build -name "*.dylib" -exec cp -L {} dist/ \; || true
-          # Zink static archive for iOS device apps (static linking is the
-          # norm on iOS: link libzink.a + MoltenVK.xcframework + the Metal,
-          # QuartzCore and Foundation frameworks in Xcode).
-          find build -name "libzink.a" -exec cp {} dist/ \; || true
           ls -la dist
 
       - name: Inspect artifacts
@@ -187,9 +177,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: libOSMesa.8.dylib
-          path: |
-            dist/
-            build/meson-logs/meson-log.txt
-            build/meson-logs/meson-summary.txt
+          path: dist/libOSMesa.8.dylib
           if-no-files-found: error
           retention-days: 30
