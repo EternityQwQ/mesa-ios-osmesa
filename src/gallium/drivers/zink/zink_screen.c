@@ -98,6 +98,29 @@ bool zink_tracing = false;
 #include <xf86drm.h>
 #endif
 
+#ifdef VK_LIBNAME_FALLBACK
+/* iOS apps have no visible stderr: record Zink screen-creation stages to
+ * zinkfail.txt in the process working directory for diagnosis. Best
+ * effort, Apple-only. Override path with ZINK_FAIL_LOG. (Defined up here
+ * because get_device() below uses it.) */
+static void
+zink_ios_fail_note(const char *what)
+{
+   const char *path = getenv("ZINK_FAIL_LOG");
+   FILE *f = fopen(path && path[0] ? path : "zinkfail.txt", "a");
+   if (f) {
+      fprintf(f, "%s\n", what);
+      fclose(f);
+   }
+}
+#else
+static inline void
+zink_ios_fail_note(const char *what)
+{
+   (void)what;
+}
+#endif
+
 static const struct debug_named_value
 zink_debug_options[] = {
    { "nir", ZINK_DEBUG_NIR, "Dump NIR during program compile" },
@@ -3463,26 +3486,6 @@ zink_loader_usable(PFN_vkGetInstanceProcAddr get_instance_proc)
 {
    return get_instance_proc &&
           get_instance_proc(NULL, "vkCreateInstance") != NULL;
-}
-
-/* iOS apps have no visible stderr: record Zink screen-creation stages to
- * zinkfail.txt in the process working directory for diagnosis. Best
- * effort, Apple-only. Override path with ZINK_FAIL_LOG. */
-static void
-zink_ios_fail_note(const char *what)
-{
-   const char *path = getenv("ZINK_FAIL_LOG");
-   FILE *f = fopen(path && path[0] ? path : "zinkfail.txt", "a");
-   if (f) {
-      fprintf(f, "%s\n", what);
-      fclose(f);
-   }
-}
-#else
-static inline void
-zink_ios_fail_note(const char *what)
-{
-   (void)what;
 }
 #endif
 
