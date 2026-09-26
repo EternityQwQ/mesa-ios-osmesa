@@ -73,6 +73,10 @@ bool zink_tracing = false;
 #if DETECT_OS_APPLE
 /* See the vulkan-loader-rpath meson option for how to specify rpath at build time. */
 #define VK_LIBNAME "@rpath/libvulkan.1.dylib"
+/* iOS app bundles may ship the real MoltenVK as libMoltenVK.dylib while
+ * libvulkan.1.dylib is only an empty stub: retry with it (see loader
+ * fallback in zink_internal_create_screen). */
+#define VK_LIBNAME_FALLBACK "@rpath/libMoltenVK.dylib"
 #elif DETECT_OS_ANDROID
 #define VK_LIBNAME "libvulkan.so"
 #else
@@ -3483,13 +3487,33 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
 
    screen->loader_lib = util_dl_open(VK_LIBNAME);
    if (!screen->loader_lib) {
-      if (!screen->driver_name_is_inferred)
-         mesa_loge("ZINK: failed to load "VK_LIBNAME);
-      goto fail;
+#if defined(VK_LIBNAME_FALLBACK)
+      screen->loader_lib = util_dl_open(VK_LIBNAME_FALLBACK);
+#endif
+      if (!screen->loader_lib) {
+         if (!screen->driver_name_is_inferred)
+            mesa_loge("ZINK: failed to load "VK_LIBNAME);
+         goto fail;
+      }
    }
 
    screen->vk_GetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)util_dl_get_proc_address(screen->loader_lib, "vkGetInstanceProcAddr");
    screen->vk_GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)util_dl_get_proc_address(screen->loader_lib, "vkGetDeviceProcAddr");
+#if defined(VK_LIBNAME_FALLBACK)
+   if (!screen->vk_GetInstanceProcAddr ||
+       !screen->vk_GetDeviceProcAddr) {
+      /* Stub loader without Vulkan entry points: retry with the bundled
+       * MoltenVK before giving up. */
+      util_dl_close(screen->loader_lib);
+      screen->loader_lib = util_dl_open(VK_LIBNAME_FALLBACK);
+      screen->vk_GetInstanceProcAddr = NULL;
+      screen->vk_GetDeviceProcAddr = NULL;
+      if (screen->loader_lib) {
+         screen->vk_GetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)util_dl_get_proc_address(screen->loader_lib, "vkGetInstanceProcAddr");
+         screen->vk_GetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)util_dl_get_proc_address(screen->loader_lib, "vkGetDeviceProcAddr");
+      }
+   }
+#endif
    if (!screen->vk_GetInstanceProcAddr ||
        !screen->vk_GetDeviceProcAddr) {
       if (!screen->driver_name_is_inferred)
