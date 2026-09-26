@@ -99,15 +99,25 @@ bool zink_tracing = false;
 #endif
 
 #ifdef VK_LIBNAME_FALLBACK
-/* iOS apps have no visible stderr: record Zink screen-creation stages to
- * zinkfail.txt in the process working directory for diagnosis. Best
- * effort, Apple-only. Override path with ZINK_FAIL_LOG. (Defined up here
- * because get_device() below uses it.) */
+/* iOS apps have no visible stderr: record Zink screen-creation stages for
+ * diagnosis. Best effort, Apple-only. Path: $ZINK_FAIL_LOG, else
+ * $TMPDIR/zinkfail.txt (iOS app tmp container, always writable), else
+ * ./zinkfail.txt. */
 static void
 zink_ios_fail_note(const char *what)
 {
    const char *path = getenv("ZINK_FAIL_LOG");
-   FILE *f = fopen(path && path[0] ? path : "zinkfail.txt", "a");
+   char buf[1024];
+   if (!path || !path[0]) {
+      const char *tmp = getenv("TMPDIR");
+      if (tmp && tmp[0]) {
+         snprintf(buf, sizeof(buf), "%s/zinkfail.txt", tmp);
+         path = buf;
+      } else {
+         path = "zinkfail.txt";
+      }
+   }
+   FILE *f = fopen(path, "a");
    if (f) {
       fprintf(f, "%s\n", what);
       fclose(f);
@@ -3643,9 +3653,10 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    }
 
    if (!screen->info.rb2_feats.nullDescriptor) {
-      mesa_loge("Zink requires the nullDescriptor feature of KHR/EXT robustness2.");
-      zink_ios_fail_note("FAIL:nullDescriptor");
-      goto fail;
+      /* Portability drivers (e.g. MoltenVK) may lack nullDescriptor;
+       * robustness2 stays disabled and rendering continues. */
+      mesa_loge("ZINK: nullDescriptor unavailable, continuing without KHR/EXT robustness2.");
+      zink_ios_fail_note("WARN:no-nullDescriptor");
    }
 
    if (zink_set_driver_strings(screen)) {
