@@ -129,6 +129,16 @@ apply_view_usage_for_format(struct zink_screen *screen, struct pipe_resource *pr
    if ((res->obj->vkusage & attachment) &&
        !(feats & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT))) {
       ivci->pNext = usage_info;
+   } else if (ivci->subresourceRange.layerCount > 1 &&
+              screen->info.props.limits.maxFramebufferLayers <= 1) {
+      /* No layered rendering (e.g. A11 MoltenVK): attachment views with
+       * >1 layer (cubes) are rejected. Multi-layer views can only ever be
+       * sampled - single-layer framebuffer views are unaffected - so drop
+       * attachment usage from the view (usage_info already has it
+       * stripped above). */
+      mesa_loge("ZINK: stripping attachment usage from %u-layer view (no layered rendering)",
+                ivci->subresourceRange.layerCount);
+      ivci->pNext = usage_info;
    } else {
       ivci->pNext = NULL;
    }
