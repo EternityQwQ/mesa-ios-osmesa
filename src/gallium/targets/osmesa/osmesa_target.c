@@ -22,6 +22,8 @@
 
 
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef GALLIUM_ZINK
@@ -32,6 +34,28 @@
 #include "target-helpers/inline_debug_helper.h"
 
 #include "sw/null/null_sw_winsys.h"
+
+#ifdef __APPLE__
+/* iOS apps have no visible stderr: record which screen OSMesa ended up
+ * with (zinkfail.txt in the process working directory, same file the
+ * Zink fail stages go to). Best effort. */
+static void
+osmesa_note(const char *what)
+{
+   const char *path = getenv("ZINK_FAIL_LOG");
+   FILE *f = fopen(path && path[0] ? path : "zinkfail.txt", "a");
+   if (f) {
+      fprintf(f, "%s\n", what);
+      fclose(f);
+   }
+}
+#else
+static inline void
+osmesa_note(const char *what)
+{
+   (void)what;
+}
+#endif
 
 
 struct pipe_screen *
@@ -67,9 +91,12 @@ osmesa_create_screen(void)
                       strcmp(driver, "llvmpipe") == 0;
       if (!force_sw) {
          screen = zink_create_screen(winsys, NULL);
-         if (screen)
+         if (screen) {
+            osmesa_note("OK:zink");
             return debug_screen_wrap(screen);
+         }
          debug_printf("OSMesa: Zink unavailable, falling back to software rasterizer\n");
+         osmesa_note("OK:softpipe-fallback");
          /* Fall through to software below. Bypass sw_screen_create() here
           * on purpose: it would retry the unmatched GALLIUM_DRIVER value
           * and give up instead of falling back. */
@@ -95,6 +122,7 @@ osmesa_create_screen(void)
       winsys->destroy(winsys);
       return NULL;
    }
+   osmesa_note("OK:softpipe");
 
    /* Inject optional trace, debug, etc. wrappers */
    return debug_screen_wrap(screen);

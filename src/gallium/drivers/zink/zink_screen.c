@@ -2866,8 +2866,10 @@ get_device(struct zink_screen *screen, VkDeviceCreateInfo *dci)
    }
 
    VkResult result = VKSCR(CreateDevice)(screen->pdev, dci, NULL, &dev);
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
       mesa_loge("ZINK: vkCreateDevice failed (%s)", vk_Result_to_str(result));
+      zink_ios_fail_note("FAIL:create-device");
+   }
 
    struct zink_device *zdev = malloc(sizeof(struct zink_device));
    zdev->refcount = 1;
@@ -3462,6 +3464,26 @@ zink_loader_usable(PFN_vkGetInstanceProcAddr get_instance_proc)
    return get_instance_proc &&
           get_instance_proc(NULL, "vkCreateInstance") != NULL;
 }
+
+/* iOS apps have no visible stderr: record Zink screen-creation stages to
+ * zinkfail.txt in the process working directory for diagnosis. Best
+ * effort, Apple-only. Override path with ZINK_FAIL_LOG. */
+static void
+zink_ios_fail_note(const char *what)
+{
+   const char *path = getenv("ZINK_FAIL_LOG");
+   FILE *f = fopen(path && path[0] ? path : "zinkfail.txt", "a");
+   if (f) {
+      fprintf(f, "%s\n", what);
+      fclose(f);
+   }
+}
+#else
+static inline void
+zink_ios_fail_note(const char *what)
+{
+   (void)what;
+}
 #endif
 
 static struct zink_screen *
@@ -3560,6 +3582,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
        * to create another instance on subsequent calls.
        */
       simple_mtx_unlock(&instance_lock);
+      zink_ios_fail_note("FAIL:create-instance");
       goto fail;
    }
    screen->instance = instance;
@@ -3594,6 +3617,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    if (screen->pdev == VK_NULL_HANDLE) {
       if (!screen->driver_name_is_inferred)
          mesa_loge("ZINK: failed to choose pdev");
+      zink_ios_fail_note("FAIL:choose-pdev");
       goto fail;
    }
    screen->is_cpu = screen->info.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
@@ -3611,16 +3635,19 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    if (!zink_get_physical_device_info(screen)) {
       if (!screen->driver_name_is_inferred)
          debug_printf("ZINK: failed to detect features\n");
+      zink_ios_fail_note("FAIL:physical-device-info");
       goto fail;
    }
 
    if (!screen->info.rb2_feats.nullDescriptor) {
       mesa_loge("Zink requires the nullDescriptor feature of KHR/EXT robustness2.");
+      zink_ios_fail_note("FAIL:nullDescriptor");
       goto fail;
    }
 
    if (zink_set_driver_strings(screen)) {
       mesa_loge("ZINK: failed to set driver strings\n");
+      zink_ios_fail_note("FAIL:driver-strings");
       goto fail;
    }
 
@@ -3669,6 +3696,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    if (screen->threaded_submit && !util_queue_init(&screen->flush_queue, "zfq", 8, 1, UTIL_QUEUE_INIT_RESIZE_IF_FULL, screen)) {
       if (!screen->driver_name_is_inferred)
          mesa_loge("zink: Failed to create flush queue.\n");
+      zink_ios_fail_note("FAIL:flush-queue");
       goto fail;
    }
 
@@ -3676,6 +3704,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    if (!screen->info.have_KHR_timeline_semaphore && !screen->info.feats12.timelineSemaphore) {
       if (!screen->driver_name_is_inferred)
          mesa_loge("zink: KHR_timeline_semaphore is required");
+      zink_ios_fail_note("FAIL:timeline-semaphore");
       goto fail;
    }
 
