@@ -393,20 +393,28 @@ check_ici(struct zink_screen *screen, VkImageCreateInfo *ici, uint64_t modifier)
       ret = VKSCR(GetPhysicalDeviceImageFormatProperties)(screen->pdev, ici->format, ici->imageType,
                                                    ici->tiling, ici->usage, ici->flags, &image_props);
    if (ret != VK_SUCCESS)
-      return false;
+      goto check_ici_fail;
    if (ici->extent.depth > image_props.maxExtent.depth ||
        ici->extent.height > image_props.maxExtent.height ||
        ici->extent.width > image_props.maxExtent.width)
-      return false;
+      goto check_ici_fail;
    if (ici->mipLevels > image_props.maxMipLevels)
-      return false;
+      goto check_ici_fail;
    if (ici->arrayLayers > image_props.maxArrayLayers)
-      return false;
+      goto check_ici_fail;
    if (!(ici->samples & image_props.sampleCounts))
-      return false;
+      goto check_ici_fail;
    if (!optimalDeviceAccess)
-      return false;
+      goto check_ici_fail;
    return true;
+check_ici_fail:
+   mesa_loge("ZINK: check_ici failed: ret=%d fmt=%d type=%u tiling=%u usage=0x%x flags=0x%x %ux%ux%u mips=%u layers=%u samples=0x%x (max %ux%ux%u mips=%u layers=%u samples=0x%x)",
+             ret, ici->format, ici->imageType, ici->tiling, ici->usage, ici->flags,
+             ici->extent.width, ici->extent.height, ici->extent.depth,
+             ici->mipLevels, ici->arrayLayers, ici->samples,
+             image_props.maxExtent.width, image_props.maxExtent.height, image_props.maxExtent.depth,
+             image_props.maxMipLevels, image_props.maxArrayLayers, image_props.sampleCounts);
+   return false;
 }
 
 static VkImageUsageFlags
