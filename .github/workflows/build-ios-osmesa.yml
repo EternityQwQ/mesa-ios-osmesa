@@ -1,4 +1,4 @@
-name: build-ios-osmesa
+name: build-ios-osmesa-zink
 
 on:
   push:
@@ -159,6 +159,186 @@ jobs:
           name: libOSMesa.8.dylib
           path: |
             dist/libOSMesa.8.dylib
+            build/meson-logs/meson-log.txt
+            build/meson-logs/meson-summary.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  zink-ios-arm64:
+    name: Zink+OSMesa dylib (iOS device arm64, Metal via MoltenVK)
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      IOS_MIN_VERSION: "14.0"
+      ARCH: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools + MoltenVK headers
+        run: |
+          set -eux
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "meson>=1.4.0" ninja mako pyyaml packaging
+
+          if ! command -v bison >/dev/null 2>&1 || ! bison --version 2>/dev/null | head -n1 | grep -qE '\b([3-9]|[1-9][0-9]+)\.'; then
+            brew install bison
+            echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          fi
+          if ! command -v flex >/dev/null 2>&1; then
+            brew install flex
+            echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          fi
+          if ! command -v pkg-config >/dev/null 2>&1; then
+            brew install pkg-config
+          fi
+          # MoltenVK headers are required to compile Zink on darwin/iOS.
+          # Zink dlopens the Vulkan loader at runtime, so brew headers are
+          # enough for the build; the iOS app must bundle MoltenVK XCFramework.
+          if ! brew list molten-vk >/dev/null 2>&1; then
+            brew install molten-vk
+          fi
+          echo "MOLTEN_VK_DIR=$(brew --prefix molten-vk)" >> "$GITHUB_ENV"
+          ls -la "$(brew --prefix molten-vk)/include" | head -n 20
+
+      - name: Select iPhoneOS SDK
+        run: |
+          set -eux
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "SDKROOT=$SDK" >> "$GITHUB_ENV"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          clang --version
+          meson --version
+          ninja --version
+          bison --version | head -n1
+          flex --version
+
+      - name: Generate iOS cross file
+        run: |
+          set -eux
+          cat > "$GITHUB_WORKSPACE/ios-arm64-cross.ini" <<EOF
+          [binaries]
+          c = ['clang', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          cpp = ['clang++', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          objc = ['clang', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          objcpp = ['clang++', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          ar = 'ar'
+          strip = 'strip'
+          nm = 'nm'
+          objdump = 'objdump'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'darwin'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+
+          [properties]
+          needs_exe_wrapper = true
+          pkg_config_libdir = ['/nonexistent']
+          EOF
+          cat "$GITHUB_WORKSPACE/ios-arm64-cross.ini"
+
+      - name: Configure (meson setup, zink+softpipe+osmesa)
+        run: |
+          set -eux
+          meson setup build \
+            --cross-file "$GITHUB_WORKSPACE/ios-arm64-cross.ini" \
+            --buildtype=release \
+            -Dosmesa=true \
+            -Dgallium-drivers=zink,softpipe \
+            -Dvulkan-drivers= \
+            -Dvulkan-layers= \
+            -Dplatforms= \
+            -Dglx=disabled \
+            -Degl=disabled \
+            -Dgbm=disabled \
+            -Dgles1=enabled \
+            -Dgles2=enabled \
+            -Dopengl=true \
+            -Dllvm=disabled \
+            -Dshared-llvm=disabled \
+            -Dmoltenvk-dir="$MOLTEN_VK_DIR" \
+            -Dvulkan-loader-rpath=@loader_path \
+            -Dexpat=disabled \
+            -Dxmlconfig=disabled \
+            -Dvalgrind=disabled \
+            -Dzstd=disabled \
+            -Ddisplay-info=disabled \
+            -Dspirv-tools=disabled \
+            -Dshader-cache=disabled \
+            -Dteflon=false \
+            -Dtorx=false \
+            -Dtools= \
+            -Dvideo-codecs= \
+            -Dbuild-tests=false \
+            -Denable-glcpp-tests=false \
+            -Dbuild-radv-tests=false \
+            -Dbuild-aco-tests=false \
+            -Dxlib-lease=disabled \
+            -Dlibunwind=disabled
+
+      - name: Build (meson compile)
+        run: meson compile -C build
+
+      - name: Stage dylibs (OSMesa + Zink gallium)
+        run: |
+          set -eux
+          mkdir -p dist
+          echo "--- all dylibs in build ---"
+          find build -name "*.dylib" | head -n 50 || true
+          # OSMesa offscreen dylib (softpipe, CPU, no GPU needed)
+          DIR=build/src/gallium/targets/osmesa
+          if [ -e "$DIR/libOSMesa.8.dylib" ]; then
+            cp -L "$DIR/libOSMesa.8.dylib" dist/libOSMesa.8.dylib
+          elif [ -e "$DIR/libOSMesa.dylib" ]; then
+            cp -L "$DIR/libOSMesa.dylib" dist/libOSMesa.8.dylib
+          else
+            echo "OSMesa dylib not found in $DIR"
+            ls -la "$DIR" || true
+            exit 1
+          fi
+          # Zink lives inside gallium megadriver / libGL. Collect whatever
+          # dylibs exist so the iOS app can load Zink (needs MoltenVK at runtime).
+          find build -name "libGL*.dylib" -o -name "*gallium*dylib" -o -name "*dri*dylib" | head -n 20 || true
+          find build -name "*.dylib" -exec cp -L {} dist/ \; || true
+          ls -la dist
+
+      - name: Inspect artifacts
+        run: |
+          set -eux
+          file dist/*.dylib || true
+          for f in dist/*.dylib; do
+            echo "===== $f ====="
+            lipo -info "$f" || true
+            otool -l "$f" | grep -A5 LC_BUILD_VERSION || true
+          done
+          echo "--- OSMesa symbols ---"
+          nm -gU dist/libOSMesa.8.dylib | grep -E 'OSMesa' || true
+          echo "--- Zink symbols (zink_screen_create etc) ---"
+          for f in dist/*.dylib; do
+            echo "-- $f --"
+            nm -gU "$f" 2>/dev/null | grep -iE 'zink|_gl' | head -n 20 || true
+          done
+          echo "--- MoltenVK / Vulkan references ---"
+          for f in dist/*.dylib; do
+            otool -L "$f" || true
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesa-ios-arm64-zink-osmesa
+          path: |
+            dist/
             build/meson-logs/meson-log.txt
             build/meson-logs/meson-summary.txt
           if-no-files-found: error
