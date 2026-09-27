@@ -123,6 +123,7 @@ dri2_ios_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_config *dri2_conf = dri2_egl_config(conf);
    struct dri2_ios_surface *ios_surf;
+   struct dri2_egl_surface *dri2_surf;
    const struct dri_config *config;
 
    if (!native_window) {
@@ -135,9 +136,10 @@ dri2_ios_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
       _eglError(EGL_BAD_ALLOC, "dri2_create_surface");
       return NULL;
    }
+   dri2_surf = &ios_surf->base;
    ios_surf->metal_layer = native_window;
 
-   if (!dri2_init_surface(&ios_surf->base, disp, EGL_WINDOW_BIT, conf,
+   if (!dri2_init_surface(&dri2_surf->base, disp, EGL_WINDOW_BIT, conf,
                          attrib_list, false, native_window))
       goto cleanup_surf;
 
@@ -155,12 +157,12 @@ dri2_ios_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
    ios_surf->base.base.Width = ios_surf->last_w;
    ios_surf->base.base.Height = ios_surf->last_h;
 
-   if (!dri2_create_drawable(dri2_dpy, config, &ios_surf->base, ios_surf)) {
+   if (!dri2_create_drawable(dri2_dpy, config, dri2_surf, ios_surf)) {
       _eglError(EGL_BAD_ALLOC, "dri2_create_surface");
       goto cleanup_surf;
    }
 
-   return &ios_surf->base;
+   return &dri2_surf->base;
 
 cleanup_surf:
    free(ios_surf);
@@ -171,11 +173,12 @@ static EGLBoolean
 dri2_ios_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
 {
    struct dri2_ios_surface *ios_surf = (struct dri2_ios_surface *)surf;
+   struct dri2_egl_surface *dri2_surf = &ios_surf->base;
 
    (void)disp;
-   if (ios_surf->base.dri_drawable)
-      driDestroyDrawable(ios_surf->base.dri_drawable);
-   dri2_fini_surface(&ios_surf->base);
+   if (dri2_surf->dri_drawable)
+      driDestroyDrawable(dri2_surf->dri_drawable);
+   dri2_fini_surface(&dri2_surf->base);
    free(ios_surf);
 
    return EGL_TRUE;
