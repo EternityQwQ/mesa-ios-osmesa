@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 #include "util/u_debug.h"
+#include "util/log.h"
 
 struct find_layer_ctx {
    void *layer;
@@ -92,10 +93,12 @@ osmesa_kopper_find_layer(void)
       dispatch_sync_f(dispatch_get_main_queue(), &ctx, find_layer_on_main);
    }
 
-   debug_printf("OSMesa Kopper: layer probe window=%s layer=%s result=%p\n",
-                ctx.window_class[0] ? ctx.window_class : "(none)",
-                ctx.layer_class[0] ? ctx.layer_class : "(none)",
-                ctx.layer);
+   /* debug_printf is compiled out in release builds - use mesa_loge so the
+    * probe result is visible in device logs. */
+   mesa_loge("OSMesa Kopper: layer probe window=%s layer=%s result=%p",
+             ctx.window_class[0] ? ctx.window_class : "(none)",
+             ctx.layer_class[0] ? ctx.layer_class : "(none)",
+             ctx.layer);
    return ctx.layer;
 }
 

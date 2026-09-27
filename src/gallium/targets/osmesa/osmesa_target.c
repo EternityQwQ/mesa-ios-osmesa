@@ -35,6 +35,8 @@
 
 #include "sw/null/null_sw_winsys.h"
 
+#include "util/log.h"
+
 #include "osmesa_kopper_present.h"
 
 #ifdef __APPLE__
@@ -91,7 +93,7 @@ osmesa_create_screen(void)
       (void)osmesa_kopper_find_layer();
       return debug_screen_wrap(screen);
    }
-   debug_printf("OSMesa: Zink unavailable, no software fallback\n");
+   mesa_loge("OSMesa: Zink unavailable, no software fallback\n");
    osmesa_note("FAIL:zink-screen");
    winsys->destroy(winsys);
    return NULL;
