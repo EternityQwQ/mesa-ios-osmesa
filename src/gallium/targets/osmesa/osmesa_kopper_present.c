@@ -24,46 +24,8 @@
 struct find_layer_ctx {
    void *layer;
    char window_class[128];
-   char view_class[128];
    char layer_class[128];
 };
-
-/* Depth-first search for a CAMetalLayer in a view subtree (max depth 8).
- * Returns the layer or NULL; records the owning view's class. */
-static id
-find_metal_layer_in_view(id view, int depth, struct find_layer_ctx *ctx)
-{
-   if (!view || depth > 8)
-      return nil;
-
-   SEL layerSel = sel_registerName("layer");
-   id (*layerFn)(id, SEL) = (void *)objc_msgSend;
-   id layer = layerFn(view, layerSel);
-   if (layer && strcmp(object_getClassName(layer), "CAMetalLayer") == 0) {
-      snprintf(ctx->view_class, sizeof(ctx->view_class), "%s",
-               object_getClassName(view));
-      snprintf(ctx->layer_class, sizeof(ctx->layer_class), "%s",
-               object_getClassName(layer));
-      return layer;
-   }
-
-   SEL subviewsSel = sel_registerName("subviews");
-   id (*subviewsFn)(id, SEL) = (void *)objc_msgSend;
-   id subs = subviewsFn(view, subviewsSel);
-   if (!subs)
-      return nil;
-   SEL countSel = sel_registerName("count");
-   unsigned long (*countFn)(id, SEL) = (void *)objc_msgSend;
-   SEL atSel = sel_registerName("objectAtIndex:");
-   id (*atFn)(id, SEL, unsigned long) = (void *)objc_msgSend;
-   unsigned long n = countFn(subs, countSel);
-   for (unsigned long i = 0; i < n; i++) {
-      id found = find_metal_layer_in_view(atFn(subs, atSel, i), depth + 1, ctx);
-      if (found)
-         return found;
-   }
-   return nil;
-}
 
 static void
 find_layer_on_main(void *arg)
@@ -71,7 +33,6 @@ find_layer_on_main(void *arg)
    struct find_layer_ctx *ctx = arg;
    ctx->layer = NULL;
    ctx->window_class[0] = '\0';
-   ctx->view_class[0] = '\0';
    ctx->layer_class[0] = '\0';
 
    Class UIApplicationClass = objc_getClass("UIApplication");
@@ -92,8 +53,17 @@ find_layer_on_main(void *arg)
    snprintf(ctx->window_class, sizeof(ctx->window_class), "%s",
             object_getClassName(window));
 
-   id layer = find_metal_layer_in_view(window, 0, ctx);
-   if (layer)
+   SEL layerSel = sel_registerName("layer");
+   id (*layerFn)(id, SEL) = (void *)objc_msgSend;
+   id layer = layerFn(window, layerSel);
+   if (!layer)
+      return;
+
+   snprintf(ctx->layer_class, sizeof(ctx->layer_class), "%s",
+            object_getClassName(layer));
+
+   /* Accept only real Metal layers for now. */
+   if (strcmp(ctx->layer_class, "CAMetalLayer") == 0)
       ctx->layer = layer;
 }
 
@@ -125,9 +95,8 @@ osmesa_kopper_find_layer(void)
 
    /* debug_printf is compiled out in release builds - use mesa_loge so the
     * probe result is visible in device logs. */
-   mesa_loge("OSMesa Kopper: layer probe window=%s view=%s layer=%s result=%p",
+   mesa_loge("OSMesa Kopper: layer probe window=%s layer=%s result=%p",
              ctx.window_class[0] ? ctx.window_class : "(none)",
-             ctx.view_class[0] ? ctx.view_class : "(none)",
              ctx.layer_class[0] ? ctx.layer_class : "(none)",
              ctx.layer);
    return ctx.layer;
