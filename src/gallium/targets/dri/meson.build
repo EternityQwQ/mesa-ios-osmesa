@@ -8,6 +8,10 @@
 
 gallium_dri_c_args = []
 gallium_dri_ld_args = [cc.get_supported_link_arguments('-Wl,--default-symver')]
+if host_machine.system() == 'darwin' and with_gallium_zink
+  # Zink's Metal code is Objective-C and needs the ObjC runtime at link.
+  gallium_dri_ld_args += ['-lobjc']
+endif
 gallium_dri_link_depends = []
 gallium_dri_drivers = []
 gallium_dri_link_with = []
