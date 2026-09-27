@@ -142,7 +142,7 @@ dri2_ios_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
       goto cleanup_surf;
 
    config = dri2_get_dri_config(dri2_conf, EGL_WINDOW_BIT,
-                                ios_surf->base.GLColorspace);
+                                ios_surf->base.base.GLColorspace);
    if (!config) {
       _eglError(EGL_BAD_MATCH,
                 "Unsupported surfacetype/colorspace configuration");
@@ -152,8 +152,8 @@ dri2_ios_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
    /* Initial size; refreshed from the layer on every GetDrawableInfo. */
    ios_layer_size_get(ios_surf->metal_layer,
                       &ios_surf->last_w, &ios_surf->last_h);
-   ios_surf->base.Width = ios_surf->last_w;
-   ios_surf->base.Height = ios_surf->last_h;
+   ios_surf->base.base.Width = ios_surf->last_w;
+   ios_surf->base.base.Height = ios_surf->last_h;
 
    if (!dri2_create_drawable(dri2_dpy, config, &ios_surf->base, ios_surf)) {
       _eglError(EGL_BAD_ALLOC, "dri2_create_surface");
