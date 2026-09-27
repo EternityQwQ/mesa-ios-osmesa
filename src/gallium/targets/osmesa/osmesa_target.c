@@ -35,6 +35,8 @@
 
 #include "sw/null/null_sw_winsys.h"
 
+#include "osmesa_kopper_present.h"
+
 #ifdef __APPLE__
 /* iOS apps have no visible stderr: record which screen OSMesa ended up
  * with (zinkfail.txt in the process working directory, same file the
@@ -85,6 +87,8 @@ osmesa_create_screen(void)
    screen = zink_create_screen(winsys, NULL);
    if (screen) {
       osmesa_note("OK:zink");
+      /* Step 1 probe: locate the app Metal layer (logs only). */
+      (void)osmesa_kopper_find_layer();
       return debug_screen_wrap(screen);
    }
    debug_printf("OSMesa: Zink unavailable, no software fallback\n");
