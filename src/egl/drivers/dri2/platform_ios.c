@@ -17,6 +17,7 @@
 #include <string.h>
 #include <objc/runtime.h>
 #include <objc/message.h>
+#include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_metal.h>
 #include "util/format/u_formats.h"
 #include "main/glconfig.h"
