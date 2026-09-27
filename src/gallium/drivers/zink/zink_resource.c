@@ -2715,11 +2715,8 @@ zink_buffer_map(struct pipe_context *pctx,
 #ifdef __APPLE__
             /* iOS degradation: route staging uploads through the proven
              * synchronous copy path - the unsync fence/cmdbuf machinery
-             * silently drops uploads and crashes on this stack.
-             * Set ZINK_IOS_UNSYNC_UPLOAD=1 to re-enable the native path
-             * (e.g. once the underlying stack is fixed) without rebuilding. */
-            if (!debug_get_bool_option("ZINK_IOS_UNSYNC_UPLOAD", false))
-               trans->unsync_upload = false;
+             * silently drops uploads and crashes on this stack. */
+            trans->unsync_upload = false;
 #endif
          } else {
             /* If we are not called from the driver thread, we have
