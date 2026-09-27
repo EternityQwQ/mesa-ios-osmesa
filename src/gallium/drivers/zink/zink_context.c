@@ -4653,7 +4653,14 @@ zink_texture_barrier(struct pipe_context *pctx, unsigned flags)
    if (!ctx->fbfetch_outputs)
       zink_batch_no_rp(ctx);
 
-   if (zink_screen(ctx->base.screen)->info.have_KHR_synchronization2) {
+#ifdef __APPLE__
+   /* iOS degradation: Barrier1 for memory barriers. Barrier2 crashes inside
+    * MoltenVK on tile GPUs under investigation; semantics are identical. */
+   bool use_sync2 = false;
+#else
+   bool use_sync2 = zink_screen(ctx->base.screen)->info.have_KHR_synchronization2;
+#endif
+   if (use_sync2) {
       VkDependencyInfo dep = {0};
       dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
       dep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
