@@ -59,6 +59,8 @@
 #include "GL/osmesa.h"
 
 #include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <c11/threads.h>
 
 #include "state_tracker/st_context.h"
@@ -354,6 +356,24 @@ osmesa_st_framebuffer_flush_front(struct st_context *st,
 
    if (statt != ST_ATTACHMENT_FRONT_LEFT)
       return false;
+
+   /* Unilateral Kopper present (v1 validation: present attempt is observed
+    * via logs, the normal readback copy below always runs). */
+   extern void *osmesa_kopper_find_layer(void);
+   extern bool zink_kopper_present_ios(struct pipe_screen *pscreen,
+                                       struct pipe_context *pctx,
+                                       struct pipe_resource *pres,
+                                       unsigned w, unsigned h,
+                                       void *metal_layer);
+   if (getenv("AMETHYST_KOPPER_PRESENT")) {
+      void *layer = osmesa_kopper_find_layer();
+      if (layer) {
+         struct pipe_screen *fscreen = get_st_manager()->screen;
+         (void)zink_kopper_present_ios(fscreen, st->pipe, res,
+                                       osbuffer->width, osbuffer->height,
+                                       layer);
+      }
+   }
 
    /* Snapshot the color buffer to the user's buffer. */
    bpp = util_format_get_blocksize(osbuffer->visual.color_format);

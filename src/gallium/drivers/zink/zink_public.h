@@ -24,7 +24,11 @@
 #ifndef ZINK_PUBLIC_H
 #define ZINK_PUBLIC_H
 
+#include <stdbool.h>
+
 struct pipe_screen;
+struct pipe_context;
+struct pipe_resource;
 struct renderonly;
 struct sw_winsys;
 struct pipe_screen_config;
@@ -36,4 +40,13 @@ struct pipe_screen *
 zink_drm_create_screen(int fd, const struct pipe_screen_config *config, struct renderonly *ro);
 struct pipe_screen *
 zink_win32_create_screen(uint64_t adapter_luid);
+
+/* Unilateral present for iOS: blit an OSMesa texture straight to the app's
+ * CAMetalLayer (opaque pointer) through a self-managed swapchain.
+ * Returns true if presented (caller may skip CPU readback), false to fall
+ * back to the normal path. No-op without AMETHYST_KOPPER_PRESENT. */
+bool
+zink_kopper_present_ios(struct pipe_screen *pscreen, struct pipe_context *pctx,
+                        struct pipe_resource *pres, unsigned w, unsigned h,
+                        void *metal_layer);
 #endif
