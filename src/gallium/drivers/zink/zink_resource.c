@@ -2712,6 +2712,12 @@ zink_buffer_map(struct pipe_context *pctx,
             trans->offset = box->x % MAX2(screen->info.props.limits.minMemoryMapAlignment, 1 << MIN_SLAB_ORDER);
             trans->staging_res = pipe_buffer_create(&screen->base, PIPE_BIND_LINEAR, PIPE_USAGE_STAGING, box->width + trans->offset);
             trans->unsync_upload = true;
+#ifdef __APPLE__
+            /* iOS degradation: route staging uploads through the proven
+             * synchronous copy path - the unsync fence/cmdbuf machinery
+             * silently drops uploads and crashes on this stack. */
+            trans->unsync_upload = false;
+#endif
          } else {
             /* If we are not called from the driver thread, we have
             * to use the uploader from u_threaded_context, which is
