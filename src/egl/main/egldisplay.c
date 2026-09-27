@@ -84,6 +84,7 @@ static const struct {
    {_EGL_PLATFORM_SURFACELESS, "surfaceless"},
    {_EGL_PLATFORM_DEVICE, "device"},
    {_EGL_PLATFORM_WINDOWS, "windows"},
+   {_EGL_PLATFORM_IOS, "ios"},
 };
 
 /**
@@ -697,6 +698,27 @@ _eglGetAndroidDisplay(void *native_display, const EGLAttrib *attrib_list)
    return _eglFindDisplay(_EGL_PLATFORM_ANDROID, native_display, attrib_list);
 }
 #endif /* HAVE_ANDROID_PLATFORM */
+
+#ifdef HAVE_IOS_PLATFORM
+_EGLDisplay *
+_eglGetIosDisplay(void *native_display, const EGLAttrib *attrib_list)
+{
+   /* native_display is the app's CAMetalLayer* (opaque here). It must be
+    * non-NULL - surfaces are created from it. This platform recognizes
+    * no display attributes. */
+   if (!native_display) {
+      _eglError(EGL_BAD_PARAMETER, "eglGetPlatformDisplay");
+      return NULL;
+   }
+
+   if (attrib_list != NULL && attrib_list[0] != EGL_NONE) {
+      _eglError(EGL_BAD_ATTRIBUTE, "eglGetPlatformDisplay");
+      return NULL;
+   }
+
+   return _eglFindDisplay(_EGL_PLATFORM_IOS, native_display, attrib_list);
+}
+#endif /* HAVE_IOS_PLATFORM */
 
 _EGLDisplay *
 _eglGetDeviceDisplay(void *native_display, const EGLAttrib *attrib_list)

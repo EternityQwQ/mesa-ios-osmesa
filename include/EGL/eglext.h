@@ -1129,6 +1129,11 @@ EGLAPI EGLBoolean EGLAPIENTRY eglExportDMABUFImageMESA (EGLDisplay dpy, EGLImage
 #define EGL_PLATFORM_SURFACELESS_MESA     0x31DD
 #endif /* EGL_MESA_platform_surfaceless */
 
+#ifndef EGL_MESA_platform_ios
+#define EGL_MESA_platform_ios 1
+#define EGL_PLATFORM_IOS_MESA             0x31E0
+#endif /* EGL_MESA_platform_ios */
+
 #ifndef EGL_MESA_query_driver
 #define EGL_MESA_query_driver 1
 typedef char *(EGLAPIENTRYP PFNEGLGETDISPLAYDRIVERCONFIGPROC) (EGLDisplay dpy);

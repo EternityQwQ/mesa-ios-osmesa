@@ -13,6 +13,7 @@ option(
   value : ['auto'],
   choices : [
     'auto', 'x11', 'wayland', 'haiku', 'android', 'windows', 'macos',
+    'ios',
   ],
   description : 'window systems to support. If this is set to `auto`, all ' +
                 'platforms applicable will be enabled.'

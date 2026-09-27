@@ -934,6 +934,9 @@ dri2_initialize(_EGLDisplay *disp)
    case _EGL_PLATFORM_ANDROID:
       ret = dri2_initialize_android(disp);
       break;
+   case _EGL_PLATFORM_IOS:
+      ret = dri2_initialize_ios(disp);
+      break;
    default:
       UNREACHABLE("Callers ensure we cannot get here.");
       return EGL_FALSE;

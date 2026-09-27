@@ -123,6 +123,12 @@ if with_dri
     deps_for_egl += [dep_android, idep_u_gralloc]
     files_egl += files('drivers/dri2/platform_android.c')
   endif
+  if with_platform_ios
+    files_egl += files('drivers/dri2/platform_ios.c')
+    # ObjC runtime for CAMetalLayer handling (UIKit/QuartzCore resolved
+    # dynamically at runtime, no framework links needed).
+    deps_for_egl += cc.find_library('objc', required : false)
+  endif
 elif with_platform_haiku
   c_args_for_egl += [
     '-D_EGL_BUILT_IN_DRIVER_HAIKU',

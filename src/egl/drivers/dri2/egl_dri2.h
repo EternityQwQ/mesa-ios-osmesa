@@ -570,6 +570,17 @@ dri2_initialize_android(_EGLDisplay *disp)
 }
 #endif
 
+#ifdef HAVE_IOS_PLATFORM
+EGLBoolean
+dri2_initialize_ios(_EGLDisplay *disp);
+#else
+static inline EGLBoolean
+dri2_initialize_ios(_EGLDisplay *disp)
+{
+   return _eglError(EGL_NOT_INITIALIZED, "iOS platform not built");
+}
+#endif
+
 EGLBoolean
 dri2_initialize_surfaceless(_EGLDisplay *disp);
 
