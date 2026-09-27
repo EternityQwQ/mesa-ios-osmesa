@@ -67,9 +67,22 @@ find_layer_on_main(void *arg)
       ctx->layer = layer;
 }
 
+/* Explicit layer handed over by the app (preferred over probing). */
+static void *explicit_layer;
+
+__attribute__((visibility("default")))
+void
+osmesa_kopper_set_layer(void *metal_layer)
+{
+   explicit_layer = metal_layer;
+}
+
 void *
 osmesa_kopper_find_layer(void)
 {
+   if (explicit_layer)
+      return explicit_layer;
+
    struct find_layer_ctx ctx;
 
    /* UIKit must be touched on the main thread. */
@@ -103,6 +116,12 @@ osmesa_kopper_find_layer(void)
 }
 
 #else /* !__APPLE__ */
+
+void
+osmesa_kopper_set_layer(void *metal_layer)
+{
+   (void)metal_layer;
+}
 
 void *
 osmesa_kopper_find_layer(void)

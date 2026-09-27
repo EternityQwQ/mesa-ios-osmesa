@@ -13,8 +13,14 @@
 #ifndef OSMESA_KOPPER_PRESENT_H
 #define OSMESA_KOPPER_PRESENT_H
 
-/* Probe the app process for a CAMetalLayer backing the key window.
- * Returns the layer pointer (opaque, do NOT release), or NULL.
+/* The app hands its CAMetalLayer over explicitly (opaque pointer, mesa
+ * never retains/releases it - ownership stays with the app).
+ * Exported with default visibility so the app can dlsym it.
+ * May be called before first use; passing NULL clears it. */
+void
+osmesa_kopper_set_layer(void *metal_layer);
+
+/* Returns the explicit layer if set, else probes the key window.
  * Safe to call repeatedly; logs what it finds. */
 void *
 osmesa_kopper_find_layer(void);
