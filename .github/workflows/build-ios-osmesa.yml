@@ -180,3 +180,136 @@ jobs:
           path: dist/libOSMesa.8.dylib
           if-no-files-found: error
           retention-days: 30
+
+  egl-ios-compile-check:
+    name: EGL iOS platform compile check (Kopper P1)
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      IOS_MIN_VERSION: "14.0"
+      ARCH: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools + MoltenVK headers
+        run: |
+          set -eux
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "meson>=1.4.0" ninja mako pyyaml packaging
+
+          if ! command -v bison >/dev/null 2>&1 || ! bison --version 2>/dev/null | head -n1 | grep -qE '\b([3-9]|[1-9][0-9]+)\.'; then
+            brew install bison
+            echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          fi
+          if ! command -v flex >/dev/null 2>&1; then
+            brew install flex
+            echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          fi
+          if ! command -v pkg-config >/dev/null 2>&1; then
+            brew install pkg-config
+          fi
+          if ! brew list molten-vk >/dev/null 2>&1; then
+            brew install molten-vk
+          fi
+          echo "MOLTEN_VK_DIR=$(brew --prefix molten-vk)" >> "$GITHUB_ENV"
+
+      - name: Select iPhoneOS SDK
+        run: |
+          set -eux
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          echo "SDKROOT=$SDK" >> "$GITHUB_ENV"
+          xcodebuild -version
+          clang --version
+          meson --version
+          ninja --version
+
+      - name: Generate iOS cross file
+        run: |
+          set -eux
+          cat > "$GITHUB_WORKSPACE/ios-arm64-cross.ini" <<EOF
+          [binaries]
+          c = ['clang', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          cpp = ['clang++', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          objc = ['clang', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          objcpp = ['clang++', '-target', 'arm64-apple-ios${IOS_MIN_VERSION}', '-isysroot', '${SDKROOT}']
+          ar = 'ar'
+          strip = 'strip'
+          nm = 'nm'
+          objdump = 'objdump'
+          pkgconfig = 'pkg-config'
+
+          [host_machine]
+          system = 'darwin'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+
+          [properties]
+          needs_exe_wrapper = true
+          pkg_config_libdir = ['/nonexistent']
+          EOF
+          cat "$GITHUB_WORKSPACE/ios-arm64-cross.ini"
+
+      - name: Configure (meson setup, egl+ios+zink)
+        run: |
+          set -eux
+          meson setup build \
+            --cross-file "$GITHUB_WORKSPACE/ios-arm64-cross.ini" \
+            --buildtype=release \
+            -Dosmesa=true \
+            -Dgallium-drivers=zink,softpipe \
+            -Dvulkan-drivers= \
+            -Dvulkan-layers= \
+            -Dplatforms=ios \
+            -Dglx=disabled \
+            -Degl=enabled \
+            -Dgbm=disabled \
+            -Dgles1=enabled \
+            -Dgles2=enabled \
+            -Dopengl=true \
+            -Dllvm=disabled \
+            -Dshared-llvm=disabled \
+            -Dmoltenvk-dir="$MOLTEN_VK_DIR" \
+            -Dvulkan-loader-rpath=@loader_path \
+            -Dexpat=disabled \
+            -Dxmlconfig=disabled \
+            -Dvalgrind=disabled \
+            -Dzstd=disabled \
+            -Ddisplay-info=disabled \
+            -Dspirv-tools=disabled \
+            -Dshader-cache=disabled \
+            -Dteflon=false \
+            -Dtorx=false \
+            -Dtools= \
+            -Dvideo-codecs= \
+            -Dbuild-tests=false \
+            -Denable-glcpp-tests=false \
+            -Dbuild-radv-tests=false \
+            -Dbuild-aco-tests=false \
+            -Dxlib-lease=disabled \
+            -Dlibunwind=disabled
+
+      - name: Build (meson compile)
+        run: meson compile -C build
+
+      - name: Verify EGL iOS artifacts
+        run: |
+          set -eux
+          find build -name "libEGL*.dylib" -o -name "libGLES*.dylib" | head -n 10 || true
+          find build -name "*.dylib" | head -n 20 || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: egl-ios-logs
+          path: build/meson-logs/
+          if-no-files-found: warn
+          retention-days: 14
