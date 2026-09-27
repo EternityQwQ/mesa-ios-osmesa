@@ -20,6 +20,8 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <stdint.h>
+
 #ifdef GALLIUM_ZINK
 #include "zink/zink_public.h"
 #endif
