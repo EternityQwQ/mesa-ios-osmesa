@@ -1495,6 +1495,12 @@ struct zink_screen {
     * eagerly and crash on NULL */
    VkBuffer dummy_buffer;
    VkDeviceMemory dummy_buffer_mem;
+#define ZINK_DUMMY_BUFFER_SIZE 16
+   /* 1x1 dummy image/view/sampler for unbound texture slots (same cause) */
+   VkImage dummy_image;
+   VkDeviceMemory dummy_image_mem;
+   VkImageView dummy_image_view;
+   VkSampler dummy_sampler;
 
    uint32_t cur_custom_border_color_samplers;
 

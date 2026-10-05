@@ -1702,6 +1702,14 @@ zink_destroy_screen(struct pipe_screen *pscreen)
       VKSCR(DestroyDescriptorSetLayout)(screen->dev, screen->bindless_layout, NULL);
 
 #ifdef __APPLE__
+   if (screen->dummy_sampler)
+      VKSCR(DestroySampler)(screen->dev, screen->dummy_sampler, NULL);
+   if (screen->dummy_image_view)
+      VKSCR(DestroyImageView)(screen->dev, screen->dummy_image_view, NULL);
+   if (screen->dummy_image)
+      VKSCR(DestroyImage)(screen->dev, screen->dummy_image, NULL);
+   if (screen->dummy_image_mem)
+      VKSCR(FreeMemory)(screen->dev, screen->dummy_image_mem, NULL);
    if (screen->dummy_buffer)
       VKSCR(DestroyBuffer)(screen->dev, screen->dummy_buffer, NULL);
    if (screen->dummy_buffer_mem)
@@ -3768,6 +3776,78 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
             if (VKSCR(MapMemory)(screen->dev, screen->dummy_buffer_mem, 0, req.size, 0, &map) == VK_SUCCESS) {
                memset(map, 0, req.size);
                VKSCR(UnmapMemory)(screen->dev, screen->dummy_buffer_mem);
+            }
+         }
+      }
+      /* 1x1 dummy image/view/sampler for unbound texture slots:
+       * same eager-resolve crash class as NULL buffers. Layout is left
+       * UNDEFINED (content is meaningless); the valid MTLTexture is what
+       * prevents the GPU fault. */
+      {
+         VkImageCreateInfo ici = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = VK_FORMAT_R8G8B8A8_UNORM,
+            .extent = {1, 1, 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         };
+         if (VKSCR(CreateImage)(screen->dev, &ici, NULL, &screen->dummy_image) == VK_SUCCESS) {
+            VkMemoryRequirements req;
+            VKSCR(GetImageMemoryRequirements)(screen->dev, screen->dummy_image, &req);
+            VkPhysicalDeviceMemoryProperties props;
+            VKSCR(GetPhysicalDeviceMemoryProperties)(screen->pdev, &props);
+            uint32_t type = UINT32_MAX;
+            for (unsigned i = 0; i < props.memoryTypeCount; i++) {
+               if (req.memoryTypeBits & BITFIELD_BIT(i)) {
+                  type = i;
+                  break;
+               }
+            }
+            VkMemoryAllocateInfo ai = {
+               .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+               .allocationSize = req.size,
+               .memoryTypeIndex = type,
+            };
+            VkImageViewCreateInfo ivci = {
+               .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+               .image = screen->dummy_image,
+               .viewType = VK_IMAGE_VIEW_TYPE_2D,
+               .format = VK_FORMAT_R8G8B8A8_UNORM,
+               .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1},
+            };
+            VkSamplerCreateInfo sci = {
+               .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+               .magFilter = VK_FILTER_NEAREST,
+               .minFilter = VK_FILTER_NEAREST,
+               .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+               .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+               .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+               .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+               .maxLod = 0.0f,
+            };
+            if (type == UINT32_MAX ||
+                VKSCR(AllocateMemory)(screen->dev, &ai, NULL, &screen->dummy_image_mem) != VK_SUCCESS ||
+                VKSCR(BindImageMemory)(screen->dev, screen->dummy_image, screen->dummy_image_mem, 0) != VK_SUCCESS ||
+                VKSCR(CreateImageView)(screen->dev, &ivci, NULL, &screen->dummy_image_view) != VK_SUCCESS ||
+                VKSCR(CreateSampler)(screen->dev, &sci, NULL, &screen->dummy_sampler) != VK_SUCCESS) {
+               if (screen->dummy_sampler)
+                  VKSCR(DestroySampler)(screen->dev, screen->dummy_sampler, NULL);
+               screen->dummy_sampler = VK_NULL_HANDLE;
+               if (screen->dummy_image_view)
+                  VKSCR(DestroyImageView)(screen->dev, screen->dummy_image_view, NULL);
+               screen->dummy_image_view = VK_NULL_HANDLE;
+               VKSCR(DestroyImage)(screen->dev, screen->dummy_image, NULL);
+               screen->dummy_image = VK_NULL_HANDLE;
+               if (screen->dummy_image_mem)
+                  VKSCR(FreeMemory)(screen->dev, screen->dummy_image_mem, NULL);
+               screen->dummy_image_mem = VK_NULL_HANDLE;
+               mesa_loge("ZINK: dummy image creation failed, NULL image descriptors may crash");
             }
          }
       }

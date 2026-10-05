@@ -714,14 +714,15 @@ update_descriptor_state_ubo_lazy(struct zink_context *ctx, mesa_shader_stage sha
          warned = true;
       }
 #endif
-   } else {
+    } else {
 #ifdef __APPLE__
       /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
       ctx->di.t.ubos[shader][slot].buffer = screen->dummy_buffer;
+      ctx->di.t.ubos[shader][slot].range = screen->dummy_buffer ? ZINK_DUMMY_BUFFER_SIZE : VK_WHOLE_SIZE;
 #else
       ctx->di.t.ubos[shader][slot].buffer = VK_NULL_HANDLE;
-#endif
       ctx->di.t.ubos[shader][slot].range = VK_WHOLE_SIZE;
+#endif
    }
    return res;
 }
@@ -755,10 +756,11 @@ update_descriptor_state_ssbo_lazy(struct zink_context *ctx, mesa_shader_stage sh
 #ifdef __APPLE__
       /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
       ctx->di.t.ssbos[shader][slot].buffer = screen->dummy_buffer;
+      ctx->di.t.ssbos[shader][slot].range = screen->dummy_buffer ? ZINK_DUMMY_BUFFER_SIZE : VK_WHOLE_SIZE;
 #else
       ctx->di.t.ssbos[shader][slot].buffer = VK_NULL_HANDLE;
-#endif
       ctx->di.t.ssbos[shader][slot].range = VK_WHOLE_SIZE;
+#endif
    }
    return res;
 }
@@ -803,8 +805,15 @@ update_descriptor_state_sampler(struct zink_context *ctx, mesa_shader_stage shad
             }
          }
       }
-   } else {
+    } else {
+#ifdef __APPLE__
+      /* same eager-resolve crash class as NULL buffers (1.2.9 push derefs
+       * a NULL imageView): substitute the 1x1 dummy view+sampler */
+      ctx->di.textures[shader][slot].imageView = screen->dummy_image_view;
+      ctx->di.textures[shader][slot].sampler = screen->dummy_sampler;
+#else
       ctx->di.textures[shader][slot].imageView = VK_NULL_HANDLE;
+#endif
       ctx->di.textures[shader][slot].imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
       if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
          ctx->di.db.tbos[shader][slot].address = 0;
