@@ -5131,6 +5131,17 @@ void
 zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zink_resource *src,
                  unsigned dst_offset, unsigned src_offset, unsigned size, bool unsync)
 {
+#ifdef __APPLE__
+   /* iOS band-aid: MoltenVK turns OOB copies into GPU page faults
+    * (DEVICE LOST). Validate and skip instead of submitting death. */
+   if ((uint64_t)src_offset + size > src->obj->size ||
+       (uint64_t)dst_offset + size > dst->obj->size) {
+      mesa_loge("ZINK: skipping OOB buffer copy (src %u+%u/%llu dst %u+%u/%llu)",
+                src_offset, size, (unsigned long long)src->obj->size,
+                dst_offset, size, (unsigned long long)dst->obj->size);
+      return;
+   }
+#endif
    if (unsync) {
       util_queue_fence_wait(&ctx->flush_fence);
       util_queue_fence_reset(&ctx->unsync_fence);
@@ -5169,6 +5180,9 @@ zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zin
                                 0, 1, &mb, 0, NULL, 0, NULL);
    }
    bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "copy_buffer(%d)", size);
+#ifdef __APPLE__
+   ctx->storm_copies++;
+#endif
    VKCTX(CmdCopyBuffer)(cmdbuf, src->obj->buffer, dst->obj->buffer, 1, &region);
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
@@ -5309,6 +5323,36 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 0, 1, &mb, 0, NULL, 0, NULL);
    }
+#ifdef __APPLE__
+   /* iOS band-aid: same OOB-copy page-fault class as zink_copy_buffer.
+    * Validate the buffer footprint (Vulkan spec formula) and the image
+    * bounds; skip death, log the culprit. */
+   {
+      struct zink_resource *bufres = buf;
+      unsigned blocksize = util_format_get_blocksize(img->base.b.format);
+      unsigned rw = region.bufferRowLength ? region.bufferRowLength : region.imageExtent.width;
+      unsigned ih = region.bufferImageHeight ? region.bufferImageHeight : region.imageExtent.height;
+      unsigned nlayers = MAX2(region.imageSubresource.layerCount, region.imageExtent.depth);
+      uint64_t need = (uint64_t)region.bufferOffset +
+                      ((uint64_t)(nlayers - 1) * ih + (region.imageExtent.height - 1)) *
+                      rw * blocksize +
+                      (uint64_t)region.imageExtent.width * blocksize;
+      unsigned lvl_w = u_minify(img->base.b.width0, level);
+      unsigned lvl_h = u_minify(img->base.b.height0, level);
+      bool img_oob = region.imageOffset.x + (int)region.imageExtent.width > (int)lvl_w ||
+                     region.imageOffset.y + (int)region.imageExtent.height > (int)lvl_h;
+      if (need > bufres->obj->size || img_oob) {
+         mesa_loge("ZINK: skipping OOB buf<->image copy (need %llu/%llu img_oob %d %ux%u+%d+%d lvl %ux%u)",
+                   (unsigned long long)need, (unsigned long long)bufres->obj->size, img_oob,
+                   region.imageExtent.width, region.imageExtent.height,
+                   region.imageOffset.x, region.imageOffset.y, lvl_w, lvl_h);
+         if (unsync)
+            util_queue_fence_signal(&ctx->unsync_fence);
+         return;
+      }
+      ctx->storm_copies++;
+   }
+#endif
    while (aspects) {
       int aspect = 1 << u_bit_scan(&aspects);
       region.imageSubresource.aspectMask = aspect;

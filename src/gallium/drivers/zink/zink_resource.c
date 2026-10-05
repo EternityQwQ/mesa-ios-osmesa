@@ -3117,6 +3117,15 @@ zink_transfer_flush_region(struct pipe_context *pctx,
             zink_copy_buffer(ctx, res, staging_res, dst_offset, src_offset, size, trans->unsync_upload);
          else
             zink_transfer_copy_bufimage(ctx, res, staging_res, trans);
+#ifdef __APPLE__
+         /* iOS storm band-aid: bound in-flight transient staging by
+          * submitting mid-storm (normal frames never reach the threshold) */
+         if (!ctx->in_rp && ctx->storm_copies >= 128) {
+            ctx->storm_copies = 0;
+            mesa_loge("ZINK: storm flush (128 copies)");
+            pctx->flush(pctx, NULL, 0);
+         }
+#endif
       }
    }
 }
