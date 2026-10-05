@@ -1490,6 +1490,12 @@ struct zink_screen {
    simple_mtx_t *queue_lock;
    VkDebugUtilsMessengerEXT debugUtilsCallbackHandle;
 
+   /* zeroed dummy buffer substituted for VK_NULL_HANDLE in descriptor
+    * templates: portability drivers (MoltenVK) resolve pushed handles
+    * eagerly and crash on NULL */
+   VkBuffer dummy_buffer;
+   VkDeviceMemory dummy_buffer_mem;
+
    uint32_t cur_custom_border_color_samplers;
 
    unsigned screen_id;

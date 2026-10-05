@@ -1701,6 +1701,13 @@ zink_destroy_screen(struct pipe_screen *pscreen)
    if (screen->bindless_layout)
       VKSCR(DestroyDescriptorSetLayout)(screen->dev, screen->bindless_layout, NULL);
 
+#ifdef __APPLE__
+   if (screen->dummy_buffer)
+      VKSCR(DestroyBuffer)(screen->dev, screen->dummy_buffer, NULL);
+   if (screen->dummy_buffer_mem)
+      VKSCR(FreeMemory)(screen->dev, screen->dummy_buffer_mem, NULL);
+#endif
+
    if (screen->dev) {
       simple_mtx_lock(&device_lock);
       set_foreach(&device_table, entry) {
@@ -3717,6 +3724,55 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
                                              screen->dev);
 
    init_queue(screen);
+
+#ifdef __APPLE__
+   /* MoltenVK resolves push-template buffer handles eagerly at record time:
+    * VK_NULL_HANDLE (emitted for unbound UBO/SSBO slots) crashes in
+    * MVKBuffer::getMTLBuffer. Pre-create a zeroed dummy for substitution. */
+   {
+      VkBufferCreateInfo bci = {
+         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+         .size = 16,
+         .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+      };
+      if (VKSCR(CreateBuffer)(screen->dev, &bci, NULL, &screen->dummy_buffer) == VK_SUCCESS) {
+         VkMemoryRequirements req;
+         VKSCR(GetBufferMemoryRequirements)(screen->dev, screen->dummy_buffer, &req);
+         VkPhysicalDeviceMemoryProperties props;
+         VKSCR(GetPhysicalDeviceMemoryProperties)(screen->pdev, &props);
+         uint32_t type = UINT32_MAX;
+         for (unsigned i = 0; i < props.memoryTypeCount; i++) {
+            if ((req.memoryTypeBits & BITFIELD_BIT(i)) &&
+                (props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+               type = i;
+               break;
+            }
+         }
+         VkMemoryAllocateInfo ai = {
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = req.size,
+            .memoryTypeIndex = type,
+         };
+         if (type == UINT32_MAX ||
+             VKSCR(AllocateMemory)(screen->dev, &ai, NULL, &screen->dummy_buffer_mem) != VK_SUCCESS ||
+             VKSCR(BindBufferMemory)(screen->dev, screen->dummy_buffer, screen->dummy_buffer_mem, 0) != VK_SUCCESS) {
+            if (screen->dummy_buffer_mem)
+               VKSCR(FreeMemory)(screen->dev, screen->dummy_buffer_mem, NULL);
+            screen->dummy_buffer_mem = VK_NULL_HANDLE;
+            VKSCR(DestroyBuffer)(screen->dev, screen->dummy_buffer, NULL);
+            screen->dummy_buffer = VK_NULL_HANDLE;
+            mesa_loge("ZINK: dummy buffer creation failed, NULL descriptors may crash");
+         } else {
+            void *map = NULL;
+            if (VKSCR(MapMemory)(screen->dev, screen->dummy_buffer_mem, 0, req.size, 0, &map) == VK_SUCCESS) {
+               memset(map, 0, req.size);
+               VKSCR(UnmapMemory)(screen->dev, screen->dummy_buffer_mem);
+            }
+         }
+      }
+   }
+#endif
 
    zink_verify_device_extensions(screen);
 

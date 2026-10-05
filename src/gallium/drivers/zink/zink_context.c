@@ -715,7 +715,12 @@ update_descriptor_state_ubo_lazy(struct zink_context *ctx, mesa_shader_stage sha
       }
 #endif
    } else {
+#ifdef __APPLE__
+      /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
+      ctx->di.t.ubos[shader][slot].buffer = screen->dummy_buffer;
+#else
       ctx->di.t.ubos[shader][slot].buffer = VK_NULL_HANDLE;
+#endif
       ctx->di.t.ubos[shader][slot].range = VK_WHOLE_SIZE;
    }
    return res;
@@ -738,13 +743,21 @@ update_descriptor_state_ssbo_db(struct zink_context *ctx, mesa_shader_stage shad
 ALWAYS_INLINE static struct zink_resource *
 update_descriptor_state_ssbo_lazy(struct zink_context *ctx, mesa_shader_stage shader, unsigned slot, struct zink_resource *res)
 {
+#ifdef __APPLE__
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
+#endif
    ctx->di.t.ssbos[shader][slot].offset = ctx->ssbos[shader][slot].buffer_offset;
    ctx->di.descriptor_res[ZINK_DESCRIPTOR_TYPE_SSBO][shader][slot] = res;
    if (res) {
       ctx->di.t.ssbos[shader][slot].buffer = res->obj->buffer;
       ctx->di.t.ssbos[shader][slot].range = ctx->ssbos[shader][slot].buffer_size;
    } else {
+#ifdef __APPLE__
+      /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
+      ctx->di.t.ssbos[shader][slot].buffer = screen->dummy_buffer;
+#else
       ctx->di.t.ssbos[shader][slot].buffer = VK_NULL_HANDLE;
+#endif
       ctx->di.t.ssbos[shader][slot].range = VK_WHOLE_SIZE;
    }
    return res;
