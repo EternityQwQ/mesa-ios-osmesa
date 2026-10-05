@@ -1768,11 +1768,6 @@ struct zink_context {
    struct zink_batch_state *last_free_batch_state; //for appending
    bool oom_flush;
    bool oom_stall;
-#ifdef __APPLE__
-   /* iOS storm band-aid: copy emissions since last submit; forces a
-    * mid-storm flush to bound transient staging (see zink_transfer_flush_region) */
-   unsigned storm_copies;
-#endif
    bool track_renderpasses;
    bool no_reorder;
    struct zink_batch_state *bs;

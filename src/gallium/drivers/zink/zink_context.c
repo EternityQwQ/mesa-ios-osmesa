@@ -5180,9 +5180,6 @@ zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zin
                                 0, 1, &mb, 0, NULL, 0, NULL);
    }
    bool marker = zink_cmd_debug_marker_begin(ctx, cmdbuf, "copy_buffer(%d)", size);
-#ifdef __APPLE__
-   ctx->storm_copies++;
-#endif
    VKCTX(CmdCopyBuffer)(cmdbuf, src->obj->buffer, dst->obj->buffer, 1, &region);
    zink_cmd_debug_marker_end(ctx, cmdbuf, marker);
 
@@ -5350,7 +5347,6 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
             util_queue_fence_signal(&ctx->unsync_fence);
          return;
       }
-      ctx->storm_copies++;
    }
 #endif
    while (aspects) {
