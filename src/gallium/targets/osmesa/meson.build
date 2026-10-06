@@ -1,4 +1,5 @@
 # Copyright © 2017 Intel Corporation
+# Copyright (C) 2026 EternityQwQ (iOS portability changes)
 # SPDX-License-Identifier: MIT
 
 osmesa_link_args = []

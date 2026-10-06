@@ -1,3 +1,4 @@
+# Copyright (C) 2026 EternityQwQ (iOS portability changes)
 name: build-ios-osmesa-zink
 
 on:

@@ -1,4 +1,5 @@
 # Copyright © 2017 Intel Corporation
+# Copyright (C) 2026 EternityQwQ (iOS portability changes)
 # SPDX-License-Identifier: MIT
 
 vk_api_xml = files('registry/vk.xml')
