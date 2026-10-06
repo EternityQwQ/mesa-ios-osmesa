@@ -1,3 +1,4 @@
+<!-- Copyright (C) 2026 EternityQwQ (iOS portability changes) -->
 # mesa-ios-osmesa
 
 Mesa 源码（`mesa-main.zip`）+ iOS 真机构建流水线。
