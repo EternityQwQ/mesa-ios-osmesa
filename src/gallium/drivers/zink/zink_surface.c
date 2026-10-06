@@ -136,8 +136,6 @@ apply_view_usage_for_format(struct zink_screen *screen, struct pipe_resource *pr
        * sampled - single-layer framebuffer views are unaffected - so drop
        * attachment usage from the view (usage_info already has it
        * stripped above). */
-      mesa_loge("ZINK: stripping attachment usage from %u-layer view (no layered rendering)",
-                ivci->subresourceRange.layerCount);
       ivci->pNext = usage_info;
    } else {
       ivci->pNext = NULL;

@@ -393,28 +393,20 @@ check_ici(struct zink_screen *screen, VkImageCreateInfo *ici, uint64_t modifier,
       ret = VKSCR(GetPhysicalDeviceImageFormatProperties)(screen->pdev, ici->format, ici->imageType,
                                                    ici->tiling, ici->usage, ici->flags, &image_props);
    if (ret != VK_SUCCESS)
-      goto check_ici_fail;
+      return false;
    if (ici->extent.depth > image_props.maxExtent.depth ||
        ici->extent.height > image_props.maxExtent.height ||
        ici->extent.width > image_props.maxExtent.width)
-      goto check_ici_fail;
+      return false;
    if (ici->mipLevels > image_props.maxMipLevels)
-      goto check_ici_fail;
+      return false;
    if (ici->arrayLayers > image_props.maxArrayLayers && !ignore_layers)
-      goto check_ici_fail;
+      return false;
    if (!(ici->samples & image_props.sampleCounts))
-      goto check_ici_fail;
+      return false;
    if (!optimalDeviceAccess)
-      goto check_ici_fail;
+      return false;
    return true;
-check_ici_fail:
-   mesa_loge("ZINK: check_ici failed: ret=%d fmt=%d type=%u tiling=%u usage=0x%x flags=0x%x %ux%ux%u mips=%u layers=%u samples=0x%x (max %ux%ux%u mips=%u layers=%u samples=0x%x)",
-             ret, ici->format, ici->imageType, ici->tiling, ici->usage, ici->flags,
-             ici->extent.width, ici->extent.height, ici->extent.depth,
-             ici->mipLevels, ici->arrayLayers, ici->samples,
-             image_props.maxExtent.width, image_props.maxExtent.height, image_props.maxExtent.depth,
-             image_props.maxMipLevels, image_props.maxArrayLayers, image_props.sampleCounts);
-   return false;
 }
 
 static VkImageUsageFlags
@@ -800,7 +792,6 @@ negotiate_image_config(struct zink_screen *screen, VkImageCreateInfo *ici, const
        * works. Ignore the layer limit and let vkCreateImage be the judge
        * (its error is already logged). */
       if (want_cube) {
-         mesa_loge("ZINK: cube blind attempt (ignoring layer limit)");
          count = build_usage_candidates(screen, templ, bind, orig_tiling,
             base_flags | VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
             false, have_fmtlist, always_mutable, configs, MAX_IMAGE_CONFIGS);
@@ -2721,6 +2712,12 @@ zink_buffer_map(struct pipe_context *pctx,
             trans->offset = box->x % MAX2(screen->info.props.limits.minMemoryMapAlignment, 1 << MIN_SLAB_ORDER);
             trans->staging_res = pipe_buffer_create(&screen->base, PIPE_BIND_LINEAR, PIPE_USAGE_STAGING, box->width + trans->offset);
             trans->unsync_upload = true;
+#ifdef __APPLE__
+            /* iOS degradation: route staging uploads through the proven
+             * synchronous copy path - the unsync fence/cmdbuf machinery
+             * silently drops uploads and crashes on this stack. */
+            trans->unsync_upload = false;
+#endif
          } else {
             /* If we are not called from the driver thread, we have
             * to use the uploader from u_threaded_context, which is

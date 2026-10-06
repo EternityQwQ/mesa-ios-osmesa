@@ -714,9 +714,15 @@ update_descriptor_state_ubo_lazy(struct zink_context *ctx, mesa_shader_stage sha
          warned = true;
       }
 #endif
-   } else {
+    } else {
+#ifdef __APPLE__
+      /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
+      ctx->di.t.ubos[shader][slot].buffer = screen->dummy_buffer;
+      ctx->di.t.ubos[shader][slot].range = screen->dummy_buffer ? ZINK_DUMMY_BUFFER_SIZE : VK_WHOLE_SIZE;
+#else
       ctx->di.t.ubos[shader][slot].buffer = VK_NULL_HANDLE;
       ctx->di.t.ubos[shader][slot].range = VK_WHOLE_SIZE;
+#endif
    }
    return res;
 }
@@ -738,14 +744,23 @@ update_descriptor_state_ssbo_db(struct zink_context *ctx, mesa_shader_stage shad
 ALWAYS_INLINE static struct zink_resource *
 update_descriptor_state_ssbo_lazy(struct zink_context *ctx, mesa_shader_stage shader, unsigned slot, struct zink_resource *res)
 {
+#ifdef __APPLE__
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
+#endif
    ctx->di.t.ssbos[shader][slot].offset = ctx->ssbos[shader][slot].buffer_offset;
    ctx->di.descriptor_res[ZINK_DESCRIPTOR_TYPE_SSBO][shader][slot] = res;
    if (res) {
       ctx->di.t.ssbos[shader][slot].buffer = res->obj->buffer;
       ctx->di.t.ssbos[shader][slot].range = ctx->ssbos[shader][slot].buffer_size;
    } else {
+#ifdef __APPLE__
+      /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
+      ctx->di.t.ssbos[shader][slot].buffer = screen->dummy_buffer;
+      ctx->di.t.ssbos[shader][slot].range = screen->dummy_buffer ? ZINK_DUMMY_BUFFER_SIZE : VK_WHOLE_SIZE;
+#else
       ctx->di.t.ssbos[shader][slot].buffer = VK_NULL_HANDLE;
       ctx->di.t.ssbos[shader][slot].range = VK_WHOLE_SIZE;
+#endif
    }
    return res;
 }
@@ -790,8 +805,15 @@ update_descriptor_state_sampler(struct zink_context *ctx, mesa_shader_stage shad
             }
          }
       }
-   } else {
+    } else {
+#ifdef __APPLE__
+      /* same eager-resolve crash class as NULL buffers (1.2.9 push derefs
+       * a NULL imageView): substitute the 1x1 dummy view+sampler */
+      ctx->di.textures[shader][slot].imageView = screen->dummy_image_view;
+      ctx->di.textures[shader][slot].sampler = screen->dummy_sampler;
+#else
       ctx->di.textures[shader][slot].imageView = VK_NULL_HANDLE;
+#endif
       ctx->di.textures[shader][slot].imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
       if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB) {
          ctx->di.db.tbos[shader][slot].address = 0;
@@ -2437,18 +2459,6 @@ zink_set_sampler_views(struct pipe_context *pctx,
    if (views) {
       for (unsigned i = 0; i < num_views; ++i) {
          struct pipe_sampler_view *pview = views[i];
-         /* iOS diagnosis: catch NULL sampler components before they crash
-          * (failure-only logging, negligible cost otherwise). */
-         if (pview) {
-            struct zink_sampler_view *bv = zink_sampler_view(pview);
-            struct pipe_resource *tex = bv ? bv->base.texture : NULL;
-            struct zink_resource *r = tex ? zink_resource(tex) : NULL;
-            if (!bv || !tex || !r || !r->obj)
-               mesa_loge("ZINK: NULL sampler component: stage=%u slot=%u view=%p tex=%p (target=%u fmt=%s) res=%p obj=%p",
-                         shader_type, start_slot + i, (void*)bv, (void*)tex,
-                         tex ? tex->target : 0, tex ? util_format_name(tex->format) : "none",
-                         (void*)r, (void*)(r ? r->obj : NULL));
-         }
          struct zink_sampler_view *a = zink_sampler_view(ctx->sampler_views[shader_type][start_slot + i]);
          struct zink_sampler_view *b = zink_sampler_view(pview);
 
@@ -5121,6 +5131,17 @@ void
 zink_copy_buffer(struct zink_context *ctx, struct zink_resource *dst, struct zink_resource *src,
                  unsigned dst_offset, unsigned src_offset, unsigned size, bool unsync)
 {
+#ifdef __APPLE__
+   /* iOS band-aid: MoltenVK turns OOB copies into GPU page faults
+    * (DEVICE LOST). Validate and skip instead of submitting death. */
+   if ((uint64_t)src_offset + size > src->obj->size ||
+       (uint64_t)dst_offset + size > dst->obj->size) {
+      mesa_loge("ZINK: skipping OOB buffer copy (src %u+%u/%llu dst %u+%u/%llu)",
+                src_offset, size, (unsigned long long)src->obj->size,
+                dst_offset, size, (unsigned long long)dst->obj->size);
+      return;
+   }
+#endif
    if (unsync) {
       util_queue_fence_wait(&ctx->flush_fence);
       util_queue_fence_reset(&ctx->unsync_fence);
@@ -5299,6 +5320,35 @@ zink_copy_image_buffer(struct zink_context *ctx, struct zink_resource *dst, stru
                                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                                 0, 1, &mb, 0, NULL, 0, NULL);
    }
+#ifdef __APPLE__
+   /* iOS band-aid: same OOB-copy page-fault class as zink_copy_buffer.
+    * Validate the buffer footprint (Vulkan spec formula) and the image
+    * bounds; skip death, log the culprit. */
+   {
+      struct zink_resource *bufres = buf;
+      unsigned blocksize = util_format_get_blocksize(img->base.b.format);
+      unsigned rw = region.bufferRowLength ? region.bufferRowLength : region.imageExtent.width;
+      unsigned ih = region.bufferImageHeight ? region.bufferImageHeight : region.imageExtent.height;
+      unsigned nlayers = MAX2(region.imageSubresource.layerCount, region.imageExtent.depth);
+      uint64_t need = (uint64_t)region.bufferOffset +
+                      ((uint64_t)(nlayers - 1) * ih + (region.imageExtent.height - 1)) *
+                      rw * blocksize +
+                      (uint64_t)region.imageExtent.width * blocksize;
+      unsigned lvl_w = u_minify(img->base.b.width0, level);
+      unsigned lvl_h = u_minify(img->base.b.height0, level);
+      bool img_oob = region.imageOffset.x + (int)region.imageExtent.width > (int)lvl_w ||
+                     region.imageOffset.y + (int)region.imageExtent.height > (int)lvl_h;
+      if (need > bufres->obj->size || img_oob) {
+         mesa_loge("ZINK: skipping OOB buf<->image copy (need %llu/%llu img_oob %d %ux%u+%d+%d lvl %ux%u)",
+                   (unsigned long long)need, (unsigned long long)bufres->obj->size, img_oob,
+                   region.imageExtent.width, region.imageExtent.height,
+                   region.imageOffset.x, region.imageOffset.y, lvl_w, lvl_h);
+         if (unsync)
+            util_queue_fence_signal(&ctx->unsync_fence);
+         return;
+      }
+   }
+#endif
    while (aspects) {
       int aspect = 1 << u_bit_scan(&aspects);
       region.imageSubresource.aspectMask = aspect;
@@ -6210,13 +6260,6 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    if (is_compute_only || zink_debug & ZINK_DEBUG_NOREORDER)
       ctx->no_reorder = true;
 
-#ifdef __APPLE__
-   /* iOS degradation policy: A11-class drivers lack features the threaded
-    * paths depend on - execute synchronously through the plain context.
-    * Existing non-threaded code path, no new logic. */
-   (void)flags;
-   return &ctx->base;
-#else
    if (!(flags & PIPE_CONTEXT_PREFER_THREADED) || flags & PIPE_CONTEXT_COMPUTE_ONLY) {
       return &ctx->base;
    }
@@ -6242,7 +6285,6 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    }
 
    return (struct pipe_context*)tc;
-#endif
 
 fail:
    if (ctx)
