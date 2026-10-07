@@ -26,6 +26,12 @@
 #include "util/u_memory.h"
 #include <stdbool.h>
 #include <stdlib.h>
+
+/* This translation unit is only built for Apple (Metal) targets. The zink
+ * meson source list includes it unconditionally, so on every other host it
+ * degrades to the no-op stub at the bottom of this file. */
+#if defined(__APPLE__) && defined(VK_USE_PLATFORM_METAL_EXT)
+
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_metal.h>
 
@@ -67,7 +73,9 @@ zink_kopper_present_ios(struct pipe_screen *pscreen, struct pipe_context *pctx,
       return false;
    if (!pscreen || !pctx || !pres || !metal_layer || !w || !h)
       return false;
-   if (pres->target != PIPE_TEXTURE_2D || pres->nr_samples > 1)
+   /* OSMesa front buffers are RECT textures. */
+   if ((pres->target != PIPE_TEXTURE_2D && pres->target != PIPE_TEXTURE_RECT) ||
+       pres->nr_samples > 1)
       return false;
 
    struct zink_screen *screen = zink_screen(pscreen);
@@ -75,9 +83,10 @@ zink_kopper_present_ios(struct pipe_screen *pscreen, struct pipe_context *pctx,
    if (!res || !res->obj || !res->obj->image)
       return false;
 
-   /* Source must be blittable RGBA8 for v1 (matches OSMesa visuals). */
+   /* Source must be blittable 8-bit RGBA in either byte order. */
    VkFormat src_format = zink_get_format(screen, pres->format);
-   if (src_format != VK_FORMAT_R8G8B8A8_UNORM)
+   if (src_format != VK_FORMAT_R8G8B8A8_UNORM &&
+       src_format != VK_FORMAT_B8G8R8A8_UNORM)
       return false;
 
    simple_mtx_lock(&present_lock);
@@ -395,3 +404,18 @@ zink_kopper_present_ios(struct pipe_screen *pscreen, struct pipe_context *pctx,
    simple_mtx_unlock(&present_lock);
    return ok;
 }
+
+#else /* !(__APPLE__ && VK_USE_PLATFORM_METAL_EXT) */
+
+/* Non-Apple hosts: kopper unilateral present is unavailable. The caller
+ * always falls back to the OSMesa readback path when this returns false. */
+bool
+zink_kopper_present_ios(struct pipe_screen *pscreen, struct pipe_context *pctx,
+                        struct pipe_resource *pres, unsigned w, unsigned h,
+                        void *metal_layer)
+{
+   (void)pscreen; (void)pctx; (void)pres; (void)w; (void)h; (void)metal_layer;
+   return false;
+}
+
+#endif /* __APPLE__ && VK_USE_PLATFORM_METAL_EXT */
