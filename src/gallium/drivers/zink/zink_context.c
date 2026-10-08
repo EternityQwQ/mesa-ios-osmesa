@@ -715,7 +715,7 @@ update_descriptor_state_ubo_lazy(struct zink_context *ctx, mesa_shader_stage sha
          warned = true;
       }
 #endif
-    } else {
+   } else {
 #ifdef __APPLE__
       /* MoltenVK crashes on VK_NULL_HANDLE in push templates: substitute dummy */
       ctx->di.t.ubos[shader][slot].buffer = screen->dummy_buffer;
@@ -806,7 +806,7 @@ update_descriptor_state_sampler(struct zink_context *ctx, mesa_shader_stage shad
             }
          }
       }
-    } else {
+   } else {
 #ifdef __APPLE__
       /* same eager-resolve crash class as NULL buffers (1.2.9 push derefs
        * a NULL imageView): substitute the 1x1 dummy view+sampler */

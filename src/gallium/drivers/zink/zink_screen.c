@@ -2882,9 +2882,8 @@ get_device(struct zink_screen *screen, VkDeviceCreateInfo *dci)
    }
 
    VkResult result = VKSCR(CreateDevice)(screen->pdev, dci, NULL, &dev);
-   if (result != VK_SUCCESS) {
+   if (result != VK_SUCCESS)
       mesa_loge("ZINK: vkCreateDevice failed (%s)", vk_Result_to_str(result));
-   }
 
    struct zink_device *zdev = malloc(sizeof(struct zink_device));
    zdev->refcount = 1;
@@ -3504,15 +3503,14 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_AUTO)
       zink_descriptor_mode = debug_get_option_zink_descriptor_mode();
 
-   screen->threaded =
 #ifdef __APPLE__
-      /* iOS degradation policy: synchronous submit (no batch worker
-       * thread). GALLIUM_THREAD=1 re-enables threaded submit. */
-      debug_get_bool_option("GALLIUM_THREAD", false);
+   /* iOS: default to synchronous batch submit (no worker thread).
+    * GALLIUM_THREAD=1 re-enables threaded submit. */
+   screen->threaded = debug_get_bool_option("GALLIUM_THREAD", false);
 #else
-      util_get_cpu_caps()->nr_cpus > 1 && debug_get_bool_option("GALLIUM_THREAD", util_get_cpu_caps()->nr_cpus > 1);
+   screen->threaded = util_get_cpu_caps()->nr_cpus > 1 &&
+                      debug_get_bool_option("GALLIUM_THREAD", util_get_cpu_caps()->nr_cpus > 1);
 #endif
-      ;
    if (zink_debug & ZINK_DEBUG_FLUSHSYNC)
       screen->threaded_submit = false;
    else
